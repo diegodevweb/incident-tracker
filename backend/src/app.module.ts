@@ -2,10 +2,14 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { IncidentsModule } from './incidents/incidents.module';
-import { IncidentsService } from './incidents/incidents.service';
-
+import { ConfigModule } from '@nestjs/config';
 @Module({
-  imports: [IncidentsModule],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    IncidentsModule
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
