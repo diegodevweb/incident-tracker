@@ -12,23 +12,77 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum IncidentStatus {
+  OPEN
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum IncidentLevel {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum IncidentSource {
+  WEBHOOK
+  DASHBOARD
+}
+
+enum UserRole {
+  ADMIN
+  CLIENT
+}
 model User {
   id        Int      @id @default(autoincrement())
   name      String
   email     String   @unique
   password  String
+  role      UserRole @default(CLIENT)
   createdAt DateTime @default(now())
-  updatedAt DateTime
+  updatedAt DateTime @updatedAt
+  incidents Incident[]
+}
+
+model Incident {
+  id          Int       @id @default(autoincrement())
+  title       String
+  description String
+  status      IncidentStatus @default(OPEN)
+  priority    IncidentLevel @default(INFO)
+  source      IncidentSource @default(DASHBOARD)
+  environment String
+  clientId    Int
+  client      User      @relation(fields: [clientId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  attachments IncidentAttachment[]
+  logs        IncidentLog[]
+}
+
+model IncidentAttachment {
+  id          Int       @id @default(autoincrement())
+  incidentId  Int
+  filename    String
+  mimeType    String
+  url         String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  incident     Incident @relation(fields: [incidentId], references: [id])
 }
 
 model IncidentLog {
   id          Int       @id @default(autoincrement())
+  incidentId  Int
   message     String
-  level       String
-  environment String
-  source      String
-  occurredAt   DateTime?
+  level       IncidentLevel @default(INFO)
+  occurredAt  DateTime?
   metadata    Json?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  incident     Incident @relation(fields: [incidentId], references: [id])
 }

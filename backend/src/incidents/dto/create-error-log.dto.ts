@@ -1,27 +1,53 @@
 import {
+  IsEnum,
+  IsInt,
   IsDateString,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
+  Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IncidentLevel, IncidentSource, IncidentStatus } from '@prisma/client';
 
 export class CreateErrorLogDto {
-  @IsString()
-  @IsNotEmpty()
-  message: string;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  clientId!: number;
 
   @IsString()
   @IsNotEmpty()
-  level: string;
+  title!: string;
 
   @IsString()
   @IsNotEmpty()
-  environment: string;
+  description!: string;
 
   @IsString()
   @IsNotEmpty()
-  source: string;
+  message!: string;
+
+  @IsOptional()
+  @IsEnum(IncidentLevel)
+  level?: IncidentLevel;
+
+  @IsString()
+  @IsNotEmpty()
+  environment!: string;
+
+  @IsOptional()
+  @IsEnum(IncidentStatus)
+  status?: IncidentStatus;
+
+  @IsOptional()
+  @IsEnum(IncidentLevel)
+  priority?: IncidentLevel;
+
+  @IsOptional()
+  @IsEnum(IncidentSource)
+  source?: IncidentSource;
 
   @IsOptional()
   @IsDateString()
