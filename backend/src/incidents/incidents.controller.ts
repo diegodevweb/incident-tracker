@@ -3,17 +3,30 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   ParseIntPipe,
   Post,
   Query,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { IncidentsService } from './incidents.service';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
 import { ErrorLogsApiKeyGuard } from './guards/error-logs-api-key.guard';
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
 import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
+import { UpdateIncidentDto } from './dto/update-incident.dto';
+import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
+
+type UploadedAttachment = {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+  size: number;
+};
 
 @Controller('incidents')
 export class IncidentsController {
@@ -30,8 +43,26 @@ export class IncidentsController {
   }
 
   @Post()
-  createIncident(@Body() body: CreateIncidentDto) {
-    return this.incidentsService.createIncident(body);
+  @UseInterceptors(FilesInterceptor('attachments', 5))
+  createIncident(
+    @Body() body: CreateIncidentDto,
+    @UploadedFiles()
+    attachments: UploadedAttachment[] = [],
+  ) {
+    return this.incidentsService.createIncident(body, attachments);
+  }
+
+  @Patch(':id')
+  updateIncident(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateIncidentDto,
+  ) {
+    return this.incidentsService.updateIncident(id, body);
+  }
+
+  @Post('preventive-actions')
+  createPreventiveAction(@Body() body: CreatePreventiveActionDto) {
+    return this.incidentsService.createPreventiveAction(body);
   }
 
   @Post('error-logs')

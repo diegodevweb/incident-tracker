@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
+  AttachmentCategory,
   IncidentLevel,
   IncidentSource,
   IncidentStatus,
@@ -10,10 +11,32 @@ import {
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
 import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
+import { UpdateIncidentDto } from './dto/update-incident.dto';
+import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
+import { StorageService } from '../storage/storage.types';
+import { randomUUID } from 'node:crypto';
+
+type UploadedAttachment = {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+  size: number;
+};
+
+type IncidentWithRelations = Prisma.IncidentGetPayload<{
+  include: {
+    client: true;
+    attachments: true;
+    logs: true;
+  };
+}>;
 
 @Injectable()
 export class IncidentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
 
   private readonly firstResponseTargetByPriority: Record<IncidentLevel, string> =
     {
@@ -22,6 +45,49 @@ export class IncidentsService {
       WARNING: 'até 1 dia útil',
       INFO: 'até 2 dias úteis',
     };
+
+  private readonly slaRules = (
+    Object.entries(this.firstResponseTargetByPriority) as [IncidentLevel, string][]
+  ).map(([priority, firstResponseTarget]) => ({
+    priority,
+    firstResponseTarget,
+    title:
+      priority === IncidentLevel.CRITICAL
+        ? 'Sistema indisponível ou emissão totalmente bloqueada'
+        : priority === IncidentLevel.ERROR
+          ? 'Emissão parcialmente bloqueada'
+          : priority === IncidentLevel.WARNING
+            ? 'Erro com contorno operacional'
+            : 'Dúvidas ou ajustes simples',
+    description:
+      priority === IncidentLevel.CRITICAL
+        ? 'Incidentes com impacto total na operação principal do cliente.'
+        : priority === IncidentLevel.ERROR
+          ? 'Falhas relevantes com impacto alto, mas ainda com operação parcial.'
+          : priority === IncidentLevel.WARNING
+            ? 'Problemas que exigem atenção, porém com fluxo alternativo possível.'
+            : 'Solicitações sem indisponibilidade e com baixo impacto operacional.',
+  }));
+
+  private buildPeriodLabel(startDate: Date, endDate: Date) {
+    const sameMonth =
+      startDate.getUTCFullYear() === endDate.getUTCFullYear() &&
+      startDate.getUTCMonth() === endDate.getUTCMonth();
+
+    if (sameMonth) {
+      return startDate.toLocaleDateString('pt-BR', {
+        month: 'long',
+        year: 'numeric',
+        timeZone: 'UTC',
+      });
+    }
+
+    return `${startDate.toLocaleDateString('pt-BR', {
+      timeZone: 'UTC',
+    })} a ${endDate.toLocaleDateString('pt-BR', {
+      timeZone: 'UTC',
+    })}`;
+  }
 
   async getIncidents(query: ListIncidentsQueryDto) {
     const where: Prisma.IncidentWhereInput = {
@@ -64,7 +130,7 @@ export class IncidentsService {
         : {}),
     };
 
-    return this.prisma.incident.findMany({
+    const incidents = await this.prisma.incident.findMany({
       where,
       include: {
         client: true,
@@ -79,9 +145,32 @@ export class IncidentsService {
         createdAt: 'desc',
       },
     });
+
+    return Promise.all(incidents.map((incident) => this.resolveIncidentAttachmentUrls(incident)));
   }
 
-  async createIncident(data: CreateIncidentDto) {
+  async createIncident(
+    data: CreateIncidentDto,
+    attachments: UploadedAttachment[] = [],
+  ) {
+    const generalAttachments = await Promise.all(
+      attachments.map(async (attachment) => {
+        const key = this.buildAttachmentKey(attachment.originalname);
+        const uploadedAttachment = await this.storageService.uploadObject({
+          key,
+          body: attachment.buffer,
+          contentType: attachment.mimetype,
+        });
+
+        return {
+          filename: attachment.originalname,
+          mimeType: attachment.mimetype,
+          url: uploadedAttachment.key,
+          category: AttachmentCategory.GENERAL,
+        };
+      }),
+    );
+
     const incident = await this.prisma.incident.create({
       data: {
         title: data.title,
@@ -98,6 +187,13 @@ export class IncidentsService {
             occurredAt: new Date(),
           },
         },
+        ...(generalAttachments.length
+          ? {
+              attachments: {
+                create: generalAttachments,
+              },
+            }
+          : {}),
       },
       include: {
         client: true,
@@ -108,7 +204,7 @@ export class IncidentsService {
 
     return {
       message: 'Ticket criado com sucesso',
-      data: incident,
+      data: await this.resolveIncidentAttachmentUrls(incident),
     };
   }
 
@@ -130,7 +226,7 @@ export class IncidentsService {
       throw new NotFoundException(`Incidente não encontrado para o ID ${id}`);
     }
 
-    return incident;
+    return this.resolveIncidentAttachmentUrls(incident);
   }
 
   async getMonthlyReport(query: MonthlyReportQueryDto) {
@@ -147,6 +243,7 @@ export class IncidentsService {
       },
       include: {
         client: true,
+        attachments: true,
         logs: {
           orderBy: {
             occurredAt: 'desc',
@@ -157,8 +254,11 @@ export class IncidentsService {
         createdAt: 'desc',
       },
     });
+    const incidentsWithAttachmentUrls = await Promise.all(
+      incidents.map((incident) => this.resolveIncidentAttachmentUrls(incident)),
+    );
 
-    const entries = incidents.map((incident) => {
+    const entries = incidentsWithAttachmentUrls.map((incident) => {
       const createdAt = incident.createdAt;
       const latestLog = incident.logs[0];
 
@@ -199,37 +299,61 @@ export class IncidentsService {
       };
     });
 
+    const preventiveActions = await this.prisma.preventiveAction.findMany({
+      where: {
+        createdAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      include: {
+        incident: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
     return {
-      monthLabel: startDate.toLocaleDateString('pt-BR', {
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }),
+      monthLabel: this.buildPeriodLabel(startDate, endDate),
       generatedAt: new Date().toISOString(),
+      periodStart: startDate.toISOString(),
+      periodEnd: endDate.toISOString(),
+      slaRules: this.slaRules,
       entries,
-      correctiveActions: incidents
-        .flatMap((incident) =>
-          incident.logs.slice(0, 1).map((log) => `Incidente #${incident.id}: ${log.message}`),
-        )
-        .slice(0, 5),
-      preventiveActions: [
-        'Checklist de revisão fiscal e monitoramento de filas.',
-        'Revisão preventiva de credenciais de integração por cliente.',
-        'Acompanhamento de tendência de erros por origem e criticidade.',
-      ],
+      correctiveActions: incidentsWithAttachmentUrls
+        .filter((incident) => incident.correctiveActions)
+        .map((incident) => ({
+          incidentId: incident.id,
+          title: incident.title,
+          description: incident.correctiveActions,
+          status: incident.status,
+          createdAt: incident.updatedAt.toISOString(),
+          attachments: incident.attachments.filter(
+            (attachment) => attachment.category === AttachmentCategory.CORRECTIVE_ACTION,
+          ),
+        })),
+      preventiveActions: preventiveActions.map((action) => ({
+        id: action.id,
+        description: action.description,
+        incidentId: action.incidentId,
+        incidentTitle: action.incident?.title ?? null,
+        createdAt: action.createdAt.toISOString(),
+      })),
       technicalIndicators: [
         {
           label: 'Incidentes atendidos',
-          value: String(incidents.length),
+          value: String(incidentsWithAttachmentUrls.length),
           status: 'ATTENDED',
         },
         {
           label: 'Percentual críticos',
-          value: incidents.length
+          value: incidentsWithAttachmentUrls.length
             ? `${Math.round(
-                (incidents.filter((incident) => incident.priority === IncidentLevel.CRITICAL)
-                  .length /
-                  incidents.length) *
+                (incidentsWithAttachmentUrls.filter(
+                  (incident) => incident.priority === IncidentLevel.CRITICAL,
+                ).length /
+                  incidentsWithAttachmentUrls.length) *
                   100,
               )}%`
             : '0%',
@@ -237,11 +361,12 @@ export class IncidentsService {
         },
         {
           label: 'Origem via webhook',
-          value: incidents.length
+          value: incidentsWithAttachmentUrls.length
             ? `${Math.round(
-                (incidents.filter((incident) => incident.source === IncidentSource.WEBHOOK)
-                  .length /
-                  incidents.length) *
+                (incidentsWithAttachmentUrls.filter(
+                  (incident) => incident.source === IncidentSource.WEBHOOK,
+                ).length /
+                  incidentsWithAttachmentUrls.length) *
                   100,
               )}%`
             : '0%',
@@ -250,13 +375,73 @@ export class IncidentsService {
         {
           label: 'Chamados resolvidos',
           value: String(
-            incidents.filter((incident) => incident.status === IncidentStatus.RESOLVED)
-              .length,
+            incidentsWithAttachmentUrls.filter(
+              (incident) => incident.status === IncidentStatus.RESOLVED,
+            ).length,
           ),
           status: 'IN_PROGRESS',
         },
       ],
     };
+  }
+
+  async updateIncident(id: number, data: UpdateIncidentDto) {
+    await this.getIncident(id);
+
+    const attachmentPayload =
+      data.correctiveActionAttachments?.filter(
+        (attachment) => attachment.filename.trim() && attachment.url.trim(),
+      ) ?? [];
+
+    const incident = await this.prisma.incident.update({
+      where: { id },
+      data: {
+        ...(data.status ? { status: data.status } : {}),
+        ...(data.correctiveActions !== undefined
+          ? { correctiveActions: data.correctiveActions || null }
+          : {}),
+        ...(data.correctiveActionAttachments
+          ? {
+              attachments: {
+                deleteMany: {
+                  category: AttachmentCategory.CORRECTIVE_ACTION,
+                },
+                create: attachmentPayload.map((attachment) => ({
+                  ...attachment,
+                  category: AttachmentCategory.CORRECTIVE_ACTION,
+                })),
+              },
+            }
+          : {}),
+      },
+      include: {
+        client: true,
+        attachments: true,
+        logs: {
+          orderBy: {
+            occurredAt: 'desc',
+          },
+        },
+      },
+    });
+
+    return this.resolveIncidentAttachmentUrls(incident);
+  }
+
+  async createPreventiveAction(data: CreatePreventiveActionDto) {
+    if (data.incidentId) {
+      await this.getIncident(data.incidentId);
+    }
+
+    return this.prisma.preventiveAction.create({
+      data: {
+        description: data.description,
+        incidentId: data.incidentId ?? null,
+      },
+      include: {
+        incident: true,
+      },
+    });
   }
 
   async getErrorLogs() {
@@ -321,5 +506,24 @@ export class IncidentsService {
       message: 'Erro cadastrado com sucesso',
       data: incidentLog,
     };
+}
+
+  private async resolveIncidentAttachmentUrls(incident: IncidentWithRelations) {
+    return {
+      ...incident,
+      attachments: await Promise.all(
+        incident.attachments.map(async (attachment) => ({
+          ...attachment,
+          url: attachment.url.startsWith('http')
+            ? attachment.url
+            : await this.storageService.getDownloadUrl(attachment.url),
+        })),
+      ),
+    };
+  }
+
+  private buildAttachmentKey(filename: string) {
+    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return `incidents/${randomUUID()}-${safeFilename}`;
   }
 }

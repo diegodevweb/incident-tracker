@@ -31,6 +31,11 @@ enum IncidentSource {
   DASHBOARD
 }
 
+enum AttachmentCategory {
+  GENERAL
+  CORRECTIVE_ACTION
+}
+
 enum UserRole {
   ADMIN
   CLIENT
@@ -47,42 +52,55 @@ model User {
 }
 
 model Incident {
-  id          Int       @id @default(autoincrement())
-  title       String
-  description String
-  status      IncidentStatus @default(OPEN)
-  priority    IncidentLevel @default(INFO)
-  source      IncidentSource @default(DASHBOARD)
-  environment String
-  clientId    Int
-  client      User      @relation(fields: [clientId], references: [id])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                Int            @id @default(autoincrement())
+  title             String
+  description       String
+  correctiveActions String?        @db.Text
+  status            IncidentStatus @default(OPEN)
+  priority          IncidentLevel  @default(INFO)
+  source            IncidentSource @default(DASHBOARD)
+  environment       String
+  clientId          Int
+  client            User           @relation(fields: [clientId], references: [id])
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   attachments IncidentAttachment[]
   logs        IncidentLog[]
+  preventiveActions PreventiveAction[]
 }
 
 model IncidentAttachment {
-  id          Int       @id @default(autoincrement())
-  incidentId  Int
-  filename    String
-  mimeType    String
-  url         String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         Int                @id @default(autoincrement())
+  incidentId Int
+  filename   String
+  mimeType   String
+  url        String
+  category   AttachmentCategory @default(GENERAL)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
 
-  incident     Incident @relation(fields: [incidentId], references: [id])
+  incident Incident @relation(fields: [incidentId], references: [id])
 }
 
 model IncidentLog {
+  id         Int           @id @default(autoincrement())
+  incidentId Int
+  message    String
+  level      IncidentLevel @default(INFO)
+  occurredAt DateTime?
+  metadata   Json?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  incident   Incident      @relation(fields: [incidentId], references: [id])
+}
+
+model PreventiveAction {
   id          Int       @id @default(autoincrement())
-  incidentId  Int
-  message     String
-  level       IncidentLevel @default(INFO)
-  occurredAt  DateTime?
-  metadata    Json?
+  description String    @db.Text
+  incidentId  Int?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  incident     Incident @relation(fields: [incidentId], references: [id])
+
+  incident Incident? @relation(fields: [incidentId], references: [id])
 }
