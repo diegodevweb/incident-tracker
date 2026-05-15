@@ -10,6 +10,7 @@ import { Type } from 'class-transformer';
 import { IncidentLevel, IncidentStatus } from '@prisma/client';
 
 export class CreateIncidentDto {
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)

@@ -10,6 +10,7 @@ import {
   UploadedFiles,
   UseGuards,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { IncidentsService } from './incidents.service';
@@ -20,6 +21,8 @@ import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import type { AuthenticatedRequest } from '../auth/authenticated-request.type';
 
 type UploadedAttachment = {
   buffer: Buffer;
@@ -33,36 +36,59 @@ export class IncidentsController {
   constructor(private readonly incidentsService: IncidentsService) {}
 
   @Get()
-  getIncidents(@Query() query: ListIncidentsQueryDto) {
-    return this.incidentsService.getIncidents(query);
+  @UseGuards(JwtAuthGuard)
+  getIncidents(
+    @Query() query: ListIncidentsQueryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.getIncidents(query, request.user);
   }
 
   @Get('reports/monthly')
-  getMonthlyReport(@Query() query: MonthlyReportQueryDto) {
-    return this.incidentsService.getMonthlyReport(query);
+  @UseGuards(JwtAuthGuard)
+  getMonthlyReport(
+    @Query() query: MonthlyReportQueryDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.getMonthlyReport(query, request.user);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(FilesInterceptor('attachments', 5))
   createIncident(
     @Body() body: CreateIncidentDto,
+    @Req() request: AuthenticatedRequest,
     @UploadedFiles()
     attachments: UploadedAttachment[] = [],
   ) {
-    return this.incidentsService.createIncident(body, attachments);
+    return this.incidentsService.createIncident(body, attachments, request.user);
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FilesInterceptor('correctiveAttachments', 6))
   updateIncident(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateIncidentDto,
+    @UploadedFiles() correctiveAttachments: UploadedAttachment[] = [],
+    @Req() request: AuthenticatedRequest,
   ) {
-    return this.incidentsService.updateIncident(id, body);
+    return this.incidentsService.updateIncident(
+      id,
+      body,
+      request.user,
+      correctiveAttachments,
+    );
   }
 
   @Post('preventive-actions')
-  createPreventiveAction(@Body() body: CreatePreventiveActionDto) {
-    return this.incidentsService.createPreventiveAction(body);
+  @UseGuards(JwtAuthGuard)
+  createPreventiveAction(
+    @Body() body: CreatePreventiveActionDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.createPreventiveAction(body, request.user);
   }
 
   @Post('error-logs')
@@ -84,7 +110,11 @@ export class IncidentsController {
   }
 
   @Get(':id')
-  getIncident(@Param('id', ParseIntPipe) id: number) {
-    return this.incidentsService.getIncident(id);
+  @UseGuards(JwtAuthGuard)
+  getIncident(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.getIncident(id, request.user);
   }
 }

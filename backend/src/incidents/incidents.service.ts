@@ -7,6 +7,7 @@ import {
   IncidentSource,
   IncidentStatus,
   Prisma,
+  UserRole,
 } from '@prisma/client';
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
 import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
@@ -15,6 +16,7 @@ import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
 import { StorageService } from '../storage/storage.types';
 import { randomUUID } from 'node:crypto';
+import { JwtPayload } from '../auth/jwt-payload.interface';
 
 type UploadedAttachment = {
   buffer: Buffer;
@@ -89,12 +91,12 @@ export class IncidentsService {
     })}`;
   }
 
-  async getIncidents(query: ListIncidentsQueryDto) {
+  async getIncidents(query: ListIncidentsQueryDto, user: JwtPayload) {
     const where: Prisma.IncidentWhereInput = {
       ...(query.status ? { status: query.status } : {}),
       ...(query.source ? { source: query.source } : {}),
       ...(query.environment ? { environment: query.environment } : {}),
-      ...(query.clientId ? { clientId: query.clientId } : {}),
+      ...this.buildScopedClientFilter(user, query.clientId),
       ...(query.client
         ? {
             client: {
@@ -152,23 +154,11 @@ export class IncidentsService {
   async createIncident(
     data: CreateIncidentDto,
     attachments: UploadedAttachment[] = [],
+    user: JwtPayload,
   ) {
-    const generalAttachments = await Promise.all(
-      attachments.map(async (attachment) => {
-        const key = this.buildAttachmentKey(attachment.originalname);
-        const uploadedAttachment = await this.storageService.uploadObject({
-          key,
-          body: attachment.buffer,
-          contentType: attachment.mimetype,
-        });
-
-        return {
-          filename: attachment.originalname,
-          mimeType: attachment.mimetype,
-          url: uploadedAttachment.key,
-          category: AttachmentCategory.GENERAL,
-        };
-      }),
+    const generalAttachments = await this.uploadAttachments(
+      attachments,
+      AttachmentCategory.GENERAL,
     );
 
     const incident = await this.prisma.incident.create({
@@ -179,7 +169,7 @@ export class IncidentsService {
         priority: data.priority ?? IncidentLevel.ERROR,
         source: IncidentSource.DASHBOARD,
         environment: data.environment,
-        clientId: data.clientId,
+        clientId: this.resolveClientId(user, data.clientId),
         logs: {
           create: {
             message: data.description,
@@ -208,7 +198,7 @@ export class IncidentsService {
     };
   }
 
-  async getIncident(id: number) {
+  async getIncident(id: number, user: JwtPayload) {
     const incident = await this.prisma.incident.findUnique({
       where: { id },
       include: {
@@ -226,10 +216,12 @@ export class IncidentsService {
       throw new NotFoundException(`Incidente não encontrado para o ID ${id}`);
     }
 
+    this.assertIncidentAccess(incident.clientId, user);
+
     return this.resolveIncidentAttachmentUrls(incident);
   }
 
-  async getMonthlyReport(query: MonthlyReportQueryDto) {
+  async getMonthlyReport(query: MonthlyReportQueryDto, user: JwtPayload) {
     const startDate = new Date(query.startDate);
     const endDate = new Date(query.endDate);
 
@@ -239,7 +231,7 @@ export class IncidentsService {
           gte: startDate,
           lte: endDate,
         },
-        ...(query.clientId ? { clientId: query.clientId } : {}),
+        ...this.buildScopedClientFilter(user, query.clientId),
       },
       include: {
         client: true,
@@ -385,13 +377,25 @@ export class IncidentsService {
     };
   }
 
-  async updateIncident(id: number, data: UpdateIncidentDto) {
-    await this.getIncident(id);
+  async updateIncident(
+    id: number,
+    data: UpdateIncidentDto,
+    user: JwtPayload,
+    correctiveAttachments: UploadedAttachment[] = [],
+  ) {
+    await this.getIncident(id, user);
 
     const attachmentPayload =
       data.correctiveActionAttachments?.filter(
-        (attachment) => attachment.filename.trim() && attachment.url.trim(),
+        (attachment) =>
+          attachment.filename.trim() &&
+          attachment.mimeType.trim() &&
+          /^https?:\/\//i.test(attachment.url.trim()),
       ) ?? [];
+    const uploadedCorrectiveAttachments = await this.uploadAttachments(
+      correctiveAttachments,
+      AttachmentCategory.CORRECTIVE_ACTION,
+    );
 
     const incident = await this.prisma.incident.update({
       where: { id },
@@ -412,6 +416,12 @@ export class IncidentsService {
                 })),
               },
             }
+          : uploadedCorrectiveAttachments.length
+            ? {
+                attachments: {
+                  create: uploadedCorrectiveAttachments,
+                },
+              }
           : {}),
       },
       include: {
@@ -428,9 +438,12 @@ export class IncidentsService {
     return this.resolveIncidentAttachmentUrls(incident);
   }
 
-  async createPreventiveAction(data: CreatePreventiveActionDto) {
+  async createPreventiveAction(
+    data: CreatePreventiveActionDto,
+    user: JwtPayload,
+  ) {
     if (data.incidentId) {
-      await this.getIncident(data.incidentId);
+      await this.getIncident(data.incidentId, user);
     }
 
     return this.prisma.preventiveAction.create({
@@ -506,7 +519,56 @@ export class IncidentsService {
       message: 'Erro cadastrado com sucesso',
       data: incidentLog,
     };
-}
+  }
+
+  private buildScopedClientFilter(user: JwtPayload, requestedClientId?: number) {
+    if (user.role === UserRole.ADMIN) {
+      return requestedClientId ? { clientId: requestedClientId } : {};
+    }
+
+    return { clientId: user.sub };
+  }
+
+  private resolveClientId(user: JwtPayload, requestedClientId?: number) {
+    if (user.role === UserRole.ADMIN) {
+      return requestedClientId ?? user.sub;
+    }
+
+    return user.sub;
+  }
+
+  private assertIncidentAccess(clientId: number, user: JwtPayload) {
+    if (user.role === UserRole.ADMIN) {
+      return;
+    }
+
+    if (clientId !== user.sub) {
+      throw new NotFoundException('Incidente não encontrado');
+    }
+  }
+
+  private async uploadAttachments(
+    attachments: UploadedAttachment[],
+    category: AttachmentCategory,
+  ) {
+    return Promise.all(
+      attachments.map(async (attachment) => {
+        const key = this.buildAttachmentKey(attachment.originalname);
+        const uploadedAttachment = await this.storageService.uploadObject({
+          key,
+          body: attachment.buffer,
+          contentType: attachment.mimetype,
+        });
+
+        return {
+          filename: attachment.originalname,
+          mimeType: attachment.mimetype,
+          url: uploadedAttachment.key,
+          category,
+        };
+      }),
+    );
+  }
 
   private async resolveIncidentAttachmentUrls(incident: IncidentWithRelations) {
     return {
