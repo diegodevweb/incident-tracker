@@ -1,0 +1,107 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  --app-bg: #f5f4ef;
+  --app-shell: rgb(255 255 255 / 0.7);
+  --app-surface: rgb(255 255 255 / 0.82);
+  --app-surface-muted: #ece9e0;
+  --app-border: rgb(24 24 27 / 0.08);
+  --app-border-strong: rgb(24 24 27 / 0.12);
+  --app-shadow-card:
+    0 20px 45px -28px rgb(15 23 42 / 0.22),
+    0 10px 24px -18px rgb(15 23 42 / 0.16);
+  --app-shadow-shell:
+    0 18px 38px -30px rgb(15 23 42 / 0.18),
+    0 8px 20px -18px rgb(15 23 42 / 0.12);
+}
+
+[data-theme="dark"] {
+  --app-bg: #15171c;
+  --app-shell: rgb(31 35 43 / 0.76);
+  --app-surface: #232730;
+  --app-surface-muted: #2b313b;
+  --app-border: rgb(255 255 255 / 0.08);
+  --app-border-strong: rgb(255 255 255 / 0.12);
+  --app-shadow-card:
+    0 24px 54px -30px rgb(0 0 0 / 0.6),
+    0 12px 26px -20px rgb(0 0 0 / 0.45);
+  --app-shadow-shell:
+    0 18px 44px -34px rgb(0 0 0 / 0.5),
+    0 10px 24px -22px rgb(0 0 0 / 0.36);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--app-bg);
+  background-image:
+    radial-gradient(circle at top left, color-mix(in oklab, var(--color-primary) 9%, transparent), transparent 28%),
+    radial-gradient(circle at bottom right, color-mix(in oklab, var(--color-secondary) 10%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in oklab, var(--app-bg) 92%, white 8%), var(--app-bg));
+  background-attachment: fixed;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 15% 20%, color-mix(in oklab, var(--color-primary) 10%, transparent), transparent 24%),
+    radial-gradient(circle at 85% 15%, color-mix(in oklab, var(--color-secondary) 8%, transparent), transparent 28%);
+  opacity: 0.8;
+}
+
+.app-main {
+  position: relative;
+  background: transparent;
+}
+
+.app-shell {
+  background: var(--app-shell);
+  border-color: var(--app-border-strong);
+  box-shadow: var(--app-shadow-shell);
+  backdrop-filter: blur(18px);
+}
+
+.app-surface {
+  background: var(--app-surface);
+  border-color: var(--app-border-strong);
+  box-shadow: var(--app-shadow-card);
+  backdrop-filter: blur(14px);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.app-surface-muted {
+  background: var(--app-surface-muted);
+  border-color: var(--app-border);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.app-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 24px 48px -28px rgb(15 23 42 / 0.26),
+    0 14px 30px -24px rgb(15 23 42 / 0.18);
+}
+
+[data-theme="dark"] .app-stat-card:hover {
+  box-shadow:
+    0 28px 58px -32px rgb(0 0 0 / 0.62),
+    0 16px 34px -24px rgb(0 0 0 / 0.48);
+}
