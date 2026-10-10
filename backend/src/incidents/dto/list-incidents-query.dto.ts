@@ -5,13 +5,16 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { IncidentSource, IncidentStatus } from '@prisma/client';
+import { MAX_VARCHAR_LENGTH } from '../limits';
 
 export class ListIncidentsQueryDto {
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_VARCHAR_LENGTH)
   q?: string;
 
   @IsOptional()
@@ -24,10 +27,12 @@ export class ListIncidentsQueryDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_VARCHAR_LENGTH)
   environment?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_VARCHAR_LENGTH)
   client?: string;
 
   @IsOptional()

@@ -6,10 +6,12 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { IncidentLevel, IncidentSource, IncidentStatus } from '@prisma/client';
+import { MAX_VARCHAR_LENGTH } from '../limits';
 
 export class CreateErrorLogDto {
   @Type(() => Number)
@@ -19,14 +21,17 @@ export class CreateErrorLogDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(MAX_VARCHAR_LENGTH)
   title!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(MAX_VARCHAR_LENGTH)
   description!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(MAX_VARCHAR_LENGTH)
   message!: string;
 
   @IsOptional()
@@ -35,6 +40,7 @@ export class CreateErrorLogDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(MAX_VARCHAR_LENGTH)
   environment!: string;
 
   @IsOptional()

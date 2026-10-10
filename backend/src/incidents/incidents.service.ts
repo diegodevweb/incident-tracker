@@ -1,6 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnsupportedMediaTypeException,
+} from '@nestjs/common';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import {
   AttachmentCategory,
   IncidentLevel,
@@ -15,6 +21,9 @@ import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
 import { StorageService } from '../storage/storage.types';
+import { detectImageType } from '../storage/detect-image-type';
+import { truncateFilename } from './filenames';
+import { MAX_VARCHAR_LENGTH } from './limits';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 
@@ -35,6 +44,8 @@ type IncidentWithRelations = Prisma.IncidentGetPayload<{
 
 @Injectable()
 export class IncidentsService {
+  private readonly logger = new Logger(IncidentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
@@ -156,41 +167,49 @@ export class IncidentsService {
     attachments: UploadedAttachment[] = [],
     user: JwtPayload,
   ) {
+    if (data.status && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Apenas administradores podem definir o status ao criar um chamado',
+      );
+    }
+
     const generalAttachments = await this.uploadAttachments(
       attachments,
       AttachmentCategory.GENERAL,
     );
 
-    const incident = await this.prisma.incident.create({
-      data: {
-        title: data.title,
-        description: data.description,
-        status: data.status ?? IncidentStatus.OPEN,
-        priority: data.priority ?? IncidentLevel.ERROR,
-        source: IncidentSource.DASHBOARD,
-        environment: data.environment,
-        clientId: this.resolveClientId(user, data.clientId),
-        logs: {
-          create: {
-            message: data.description,
-            level: data.priority ?? IncidentLevel.ERROR,
-            occurredAt: new Date(),
+    const incident = await this.withUploadCleanup(generalAttachments, () =>
+      this.prisma.incident.create({
+        data: {
+          title: data.title,
+          description: data.description,
+          status: data.status ?? IncidentStatus.OPEN,
+          priority: data.priority ?? IncidentLevel.ERROR,
+          source: IncidentSource.DASHBOARD,
+          environment: data.environment,
+          clientId: this.resolveClientId(user, data.clientId),
+          logs: {
+            create: {
+              message: data.description,
+              level: data.priority ?? IncidentLevel.ERROR,
+              occurredAt: new Date(),
+            },
           },
+          ...(generalAttachments.length
+            ? {
+                attachments: {
+                  create: generalAttachments,
+                },
+              }
+            : {}),
         },
-        ...(generalAttachments.length
-          ? {
-              attachments: {
-                create: generalAttachments,
-              },
-            }
-          : {}),
-      },
-      include: {
-        client: true,
-        attachments: true,
-        logs: true,
-      },
-    });
+        include: {
+          client: true,
+          attachments: true,
+          logs: true,
+        },
+      }),
+    );
 
     return {
       message: 'Ticket criado com sucesso',
@@ -385,55 +404,36 @@ export class IncidentsService {
   ) {
     await this.getIncident(id, user);
 
-    const attachmentPayload =
-      data.correctiveActionAttachments?.filter(
-        (attachment) =>
-          attachment.filename.trim() &&
-          attachment.mimeType.trim() &&
-          /^https?:\/\//i.test(attachment.url.trim()),
-      ) ?? [];
     const uploadedCorrectiveAttachments = await this.uploadAttachments(
       correctiveAttachments,
       AttachmentCategory.CORRECTIVE_ACTION,
     );
 
-    const incident = await this.prisma.incident.update({
-      where: { id },
-      data: {
-        ...(data.status ? { status: data.status } : {}),
-        ...(data.correctiveActions !== undefined
-          ? { correctiveActions: data.correctiveActions || null }
-          : {}),
-        ...(data.correctiveActionAttachments
-          ? {
-              attachments: {
-                deleteMany: {
-                  category: AttachmentCategory.CORRECTIVE_ACTION,
-                },
-                create: attachmentPayload.map((attachment) => ({
-                  ...attachment,
-                  category: AttachmentCategory.CORRECTIVE_ACTION,
-                })),
-              },
-            }
-          : uploadedCorrectiveAttachments.length
-            ? {
-                attachments: {
-                  create: uploadedCorrectiveAttachments,
-                },
-              }
-          : {}),
-      },
-      include: {
-        client: true,
-        attachments: true,
-        logs: {
-          orderBy: {
-            occurredAt: 'desc',
+    const incident = await this.withUploadCleanup(
+      uploadedCorrectiveAttachments,
+      () =>
+        this.prisma.incident.update({
+          where: { id },
+          data: {
+            ...(data.status ? { status: data.status } : {}),
+            ...(data.correctiveActions !== undefined
+              ? { correctiveActions: data.correctiveActions || null }
+              : {}),
+            ...(uploadedCorrectiveAttachments.length
+              ? { attachments: { create: uploadedCorrectiveAttachments } }
+              : {}),
           },
-        },
-      },
-    });
+          include: {
+            client: true,
+            attachments: true,
+            logs: {
+              orderBy: {
+                occurredAt: 'desc',
+              },
+            },
+          },
+        }),
+    );
 
     return this.resolveIncidentAttachmentUrls(incident);
   }
@@ -551,23 +551,79 @@ export class IncidentsService {
     attachments: UploadedAttachment[],
     category: AttachmentCategory,
   ) {
-    return Promise.all(
-      attachments.map(async (attachment) => {
+    // Valida todos os arquivos antes de enviar qualquer um ao storage.
+    const detectedTypes = attachments.map((attachment) => {
+      const detectedType = detectImageType(attachment.buffer);
+
+      if (!detectedType) {
+        throw new UnsupportedMediaTypeException(
+          `O arquivo "${attachment.originalname}" não é um tipo permitido. Envie imagens PNG ou JPEG.`,
+        );
+      }
+
+      return detectedType;
+    });
+
+    const results = await Promise.allSettled(
+      attachments.map(async (attachment, index) => {
         const key = this.buildAttachmentKey(attachment.originalname);
         const uploadedAttachment = await this.storageService.uploadObject({
           key,
           body: attachment.buffer,
-          contentType: attachment.mimetype,
+          contentType: detectedTypes[index].mime,
         });
 
         return {
-          filename: attachment.originalname,
-          mimeType: attachment.mimetype,
+          filename: truncateFilename(
+            attachment.originalname,
+            MAX_VARCHAR_LENGTH,
+          ),
+          mimeType: detectedTypes[index].mime,
           url: uploadedAttachment.key,
           category,
         };
       }),
     );
+
+    const uploaded = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    const failure = results.find((result) => result.status === 'rejected');
+
+    if (failure) {
+      await this.deleteUploadedObjects(uploaded);
+      throw failure.reason;
+    }
+
+    return uploaded;
+  }
+
+  private async withUploadCleanup<T>(
+    uploaded: { url: string }[],
+    operation: () => Promise<T>,
+  ) {
+    try {
+      return await operation();
+    } catch (error) {
+      await this.deleteUploadedObjects(uploaded);
+      throw error;
+    }
+  }
+
+  private async deleteUploadedObjects(uploaded: { url: string }[]) {
+    const results = await Promise.allSettled(
+      uploaded.map((attachment) =>
+        this.storageService.deleteObject(attachment.url),
+      ),
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        this.logger.warn(
+          `Não foi possível remover o objeto órfão ${uploaded[index].url}`,
+        );
+      }
+    });
   }
 
   private async resolveIncidentAttachmentUrls(incident: IncidentWithRelations) {
@@ -585,7 +641,11 @@ export class IncidentsService {
   }
 
   private buildAttachmentKey(filename: string) {
-    const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+    // "incidents/" + uuid + "-" ocupam 47 caracteres; o resto precisa caber em VARCHAR(191).
+    const safeFilename = truncateFilename(
+      filename.replace(/[^a-zA-Z0-9._-]/g, '_'),
+      100,
+    );
     return `incidents/${randomUUID()}-${safeFilename}`;
   }
 }

@@ -21,8 +21,16 @@ import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
+import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import type { AuthenticatedRequest } from '../auth/authenticated-request.type';
+import {
+  MAX_CORRECTIVE_ATTACHMENTS,
+  MAX_INCIDENT_ATTACHMENTS,
+  uploadLimits,
+} from './limits';
 
 type UploadedAttachment = {
   buffer: Buffer;
@@ -45,7 +53,8 @@ export class IncidentsController {
   }
 
   @Get('reports/monthly')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   getMonthlyReport(
     @Query() query: MonthlyReportQueryDto,
     @Req() request: AuthenticatedRequest,
@@ -55,7 +64,13 @@ export class IncidentsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FilesInterceptor('attachments', 5))
+  @UseInterceptors(
+    FilesInterceptor(
+      'attachments',
+      MAX_INCIDENT_ATTACHMENTS,
+      uploadLimits(MAX_INCIDENT_ATTACHMENTS),
+    ),
+  )
   createIncident(
     @Body() body: CreateIncidentDto,
     @Req() request: AuthenticatedRequest,
@@ -66,8 +81,15 @@ export class IncidentsController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FilesInterceptor('correctiveAttachments', 6))
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(
+    FilesInterceptor(
+      'correctiveAttachments',
+      MAX_CORRECTIVE_ATTACHMENTS,
+      uploadLimits(MAX_CORRECTIVE_ATTACHMENTS),
+    ),
+  )
   updateIncident(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateIncidentDto,
@@ -83,7 +105,8 @@ export class IncidentsController {
   }
 
   @Post('preventive-actions')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   createPreventiveAction(
     @Body() body: CreatePreventiveActionDto,
     @Req() request: AuthenticatedRequest,
