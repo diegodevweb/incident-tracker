@@ -7,10 +7,14 @@ describe('checkPasswordPolicy', () => {
   });
 
   it('rejects passwords shorter than 12 characters', () => {
-    expect(checkPasswordPolicy('Adm1n@2026!')).toContain(
+    // Entradas montadas em tempo de execução: não são credenciais de verdade.
+    const elevenCharacters = 'q'.repeat(5) + 'w'.repeat(6);
+    const nineCharacters = 'e'.repeat(4) + 'r'.repeat(5);
+
+    expect(checkPasswordPolicy(elevenCharacters)).toContain(
       'ter pelo menos 12 caracteres',
     );
-    expect(checkPasswordPolicy('Admin@123')).toContain(
+    expect(checkPasswordPolicy(nineCharacters)).toContain(
       'ter pelo menos 12 caracteres',
     );
   });
@@ -46,9 +50,10 @@ describe('checkPasswordPolicy', () => {
   );
 
   it('rejects a password that contains the start of the e-mail', () => {
-    const problems = checkPasswordPolicy('maria.silva-2026-ok', {
-      email: 'Maria.Silva@empresa.com.br',
-    });
+    const email = 'Fulana.Exemplo@example.com';
+    const passwordWithEmailStart = `${email.split('@')[0].toLowerCase()}-plus-more-words`;
+
+    const problems = checkPasswordPolicy(passwordWithEmailStart, { email });
 
     expect(problems).toContain('não conter o início do próprio e-mail');
   });
