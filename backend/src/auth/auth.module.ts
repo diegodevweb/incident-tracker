@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { DevAuthSeedService } from './dev-auth-seed.service';
+import { getJwtSecret } from './jwt-secret';
 import { LoginRateLimitService } from './login-rate-limit.service';
 import { JwtStrategy } from './jwt.strategy';
 
@@ -12,11 +14,14 @@ import { JwtStrategy } from './jwt.strategy';
   imports: [
     PrismaModule,
     PassportModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'incident-tracker-dev-secret',
-      signOptions: {
-        expiresIn: '8h',
-      },
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: getJwtSecret(configService),
+        signOptions: {
+          expiresIn: '8h',
+        },
+      }),
     }),
   ],
   controllers: [AuthController],
