@@ -201,7 +201,10 @@ export class IncidentsService {
       summary: {
         byStatus: toCounts(
           Object.values(IncidentStatus),
-          byStatus.map((row) => ({ value: row.status, count: row._count._all })),
+          byStatus.map((row) => ({
+            value: row.status,
+            count: row._count._all,
+          })),
         ),
         byPriority: toCounts(
           Object.values(IncidentLevel),
@@ -212,7 +215,10 @@ export class IncidentsService {
         ),
         bySource: toCounts(
           Object.values(IncidentSource),
-          bySource.map((row) => ({ value: row.source, count: row._count._all })),
+          bySource.map((row) => ({
+            value: row.source,
+            count: row._count._all,
+          })),
         ),
       },
     };
@@ -328,9 +334,9 @@ export class IncidentsService {
       },
     });
     const incidentsWithAttachmentUrls = await Promise.all(
-      incidents.map((incident) =>
+      incidents.map(async (incident) =>
         incident.correctiveActions
-          ? this.resolveIncidentAttachmentUrls(incident)
+          ? await this.resolveIncidentAttachmentUrls(incident)
           : incident,
       ),
     );
