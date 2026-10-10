@@ -1,6 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import {
   AttachmentCategory,
   IncidentLevel,
@@ -156,6 +160,12 @@ export class IncidentsService {
     attachments: UploadedAttachment[] = [],
     user: JwtPayload,
   ) {
+    if (data.status && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Apenas administradores podem definir o status ao criar um chamado',
+      );
+    }
+
     const generalAttachments = await this.uploadAttachments(
       attachments,
       AttachmentCategory.GENERAL,

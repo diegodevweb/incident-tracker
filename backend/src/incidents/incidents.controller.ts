@@ -21,7 +21,10 @@ import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
+import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 import type { AuthenticatedRequest } from '../auth/authenticated-request.type';
 
 type UploadedAttachment = {
@@ -45,7 +48,8 @@ export class IncidentsController {
   }
 
   @Get('reports/monthly')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   getMonthlyReport(
     @Query() query: MonthlyReportQueryDto,
     @Req() request: AuthenticatedRequest,
@@ -66,7 +70,8 @@ export class IncidentsController {
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @UseInterceptors(FilesInterceptor('correctiveAttachments', 6))
   updateIncident(
     @Param('id', ParseIntPipe) id: number,
@@ -83,7 +88,8 @@ export class IncidentsController {
   }
 
   @Post('preventive-actions')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   createPreventiveAction(
     @Body() body: CreatePreventiveActionDto,
     @Req() request: AuthenticatedRequest,
