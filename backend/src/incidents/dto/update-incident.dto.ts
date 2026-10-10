@@ -1,27 +1,6 @@
-import {
-  ArrayMaxSize,
-  IsArray,
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsUrl,
-  ValidateNested,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { IncidentStatus } from '@prisma/client';
-
-class CorrectiveActionAttachmentDto {
-  @IsString()
-  filename!: string;
-
-  @IsString()
-  mimeType!: string;
-
-  @IsUrl({
-    require_tld: false,
-  })
-  url!: string;
-}
+import { MAX_LONG_TEXT_LENGTH } from '../limits';
 
 export class UpdateIncidentDto {
   @IsOptional()
@@ -30,12 +9,6 @@ export class UpdateIncidentDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_LONG_TEXT_LENGTH)
   correctiveActions?: string;
-
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(6)
-  @ValidateNested({ each: true })
-  @Type(() => CorrectiveActionAttachmentDto)
-  correctiveActionAttachments?: CorrectiveActionAttachmentDto[];
 }

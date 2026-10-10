@@ -11,4 +11,5 @@ export type UploadObjectResult = {
 export abstract class StorageService {
   abstract uploadObject(input: UploadObjectInput): Promise<UploadObjectResult>;
   abstract getDownloadUrl(key: string): Promise<string>;
+  abstract deleteObject(key: string): Promise<void>;
 }

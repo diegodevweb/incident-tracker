@@ -26,6 +26,11 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthenticatedRequest } from '../auth/authenticated-request.type';
+import {
+  MAX_CORRECTIVE_ATTACHMENTS,
+  MAX_INCIDENT_ATTACHMENTS,
+  uploadLimits,
+} from './limits';
 
 type UploadedAttachment = {
   buffer: Buffer;
@@ -59,7 +64,13 @@ export class IncidentsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  @UseInterceptors(FilesInterceptor('attachments', 5))
+  @UseInterceptors(
+    FilesInterceptor(
+      'attachments',
+      MAX_INCIDENT_ATTACHMENTS,
+      uploadLimits(MAX_INCIDENT_ATTACHMENTS),
+    ),
+  )
   createIncident(
     @Body() body: CreateIncidentDto,
     @Req() request: AuthenticatedRequest,
@@ -72,7 +83,13 @@ export class IncidentsController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  @UseInterceptors(FilesInterceptor('correctiveAttachments', 6))
+  @UseInterceptors(
+    FilesInterceptor(
+      'correctiveAttachments',
+      MAX_CORRECTIVE_ATTACHMENTS,
+      uploadLimits(MAX_CORRECTIVE_ATTACHMENTS),
+    ),
+  )
   updateIncident(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateIncidentDto,

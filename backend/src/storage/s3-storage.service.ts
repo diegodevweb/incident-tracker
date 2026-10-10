@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
@@ -49,6 +50,15 @@ export class S3StorageService extends StorageService {
     return {
       key: input.key,
     };
+  }
+
+  async deleteObject(key: string) {
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.storageConfig.bucket,
+        Key: key,
+      }),
+    );
   }
 
   async getDownloadUrl(key: string) {

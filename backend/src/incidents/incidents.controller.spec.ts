@@ -9,6 +9,7 @@ import request from 'supertest';
 import { JwtStrategy } from '../auth/jwt.strategy';
 import { IncidentsController } from './incidents.controller';
 import { IncidentsService } from './incidents.service';
+import { MAX_INCIDENT_ATTACHMENTS, MAX_UPLOAD_FILE_BYTES } from './limits';
 
 const JWT_SECRET = 'test-secret-with-more-than-32-bytes-of-length';
 
@@ -190,6 +191,108 @@ describe('IncidentsController authorization', () => {
         .expect(201);
 
       expect(incidentsService.createIncident).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('upload and input limits', () => {
+    const validTicket = {
+      title: 'Erro na emissão',
+      description: 'Nota rejeitada',
+      environment: 'production',
+    };
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    const openTicketWith = (fields: Record<string, string>) => {
+      const req = http()
+        .post('/incidents')
+        .set('Authorization', `Bearer ${clientToken()}`);
+      Object.entries(fields).forEach(([key, value]) => {
+        req.field(key, value);
+      });
+      return req;
+    };
+
+    it('rejects a file above the size limit with 413 before reaching the service', async () => {
+      const oversized = Buffer.alloc(MAX_UPLOAD_FILE_BYTES + 1, 0);
+
+      await openTicketWith(validTicket)
+        .attach('attachments', oversized, 'big.png')
+        .expect(413);
+
+      expect(incidentsService.createIncident).not.toHaveBeenCalled();
+    });
+
+    it('accepts a file within the size limit', async () => {
+      await openTicketWith(validTicket)
+        .attach('attachments', png, 'ok.png')
+        .expect(201);
+
+      expect(incidentsService.createIncident).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects more files than allowed', async () => {
+      const req = openTicketWith(validTicket);
+      for (let i = 0; i <= MAX_INCIDENT_ATTACHMENTS; i++) {
+        req.attach('attachments', png, `p${i}.png`);
+      }
+
+      await req.expect(400);
+
+      expect(incidentsService.createIncident).not.toHaveBeenCalled();
+    });
+
+    it('rejects a description longer than the column with 400 instead of failing in the database', async () => {
+      await http()
+        .post('/incidents')
+        .set('Authorization', `Bearer ${clientToken()}`)
+        .send({ ...validTicket, description: 'x'.repeat(192) })
+        .expect(400);
+
+      expect(incidentsService.createIncident).not.toHaveBeenCalled();
+    });
+
+    it('accepts corrective attachments in the multipart field the frontend sends', async () => {
+      await http()
+        .patch('/incidents/1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .field('correctiveActions', 'Reiniciado o serviço')
+        .attach('correctiveAttachments', png, 'fix.png')
+        .expect(200);
+
+      expect(incidentsService.updateIncident).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ correctiveActions: 'Reiniciado o serviço' }),
+        expect.anything(),
+        [expect.objectContaining({ originalname: 'fix.png' })],
+      );
+    });
+
+    it('rejects files sent under the old field name, which the frontend no longer uses', async () => {
+      await http()
+        .patch('/incidents/1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .attach('correctiveActionAttachments', png, 'fix.png')
+        .expect(400);
+
+      expect(incidentsService.updateIncident).not.toHaveBeenCalled();
+    });
+
+    it('rejects the old JSON contract of corrective attachments (external URLs)', async () => {
+      await http()
+        .patch('/incidents/1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({
+          correctiveActionAttachments: [
+            {
+              filename: 'x.png',
+              mimeType: 'image/png',
+              url: 'https://evil.example/x',
+            },
+          ],
+        })
+        .expect(400);
+
+      expect(incidentsService.updateIncident).not.toHaveBeenCalled();
     });
   });
 });

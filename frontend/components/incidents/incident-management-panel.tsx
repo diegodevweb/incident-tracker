@@ -40,7 +40,7 @@ export function IncidentManagementPanel({
         await updateIncident(incident.id, {
           status,
           correctiveActions,
-          correctiveActionAttachments: correctiveAttachmentFiles,
+          correctiveAttachments: correctiveAttachmentFiles,
         });
         setFeedback("Chamado atualizado com sucesso.");
         router.refresh();

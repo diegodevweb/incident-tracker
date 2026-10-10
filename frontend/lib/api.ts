@@ -177,23 +177,24 @@ export async function updateIncident(
   payload: {
     status?: IncidentStatus;
     correctiveActions?: string;
-    correctiveActionAttachments?: File[];
+    correctiveAttachments?: File[];
   },
 ) {
-  const hasFiles = Boolean(payload.correctiveActionAttachments?.length);
-  const body = hasFiles ? new FormData() : JSON.stringify(payload);
+  const { correctiveAttachments, ...fields } = payload;
+  const hasFiles = Boolean(correctiveAttachments?.length);
+  const body = hasFiles ? new FormData() : JSON.stringify(fields);
 
   if (body instanceof FormData) {
-    if (payload.status) {
-      body.set("status", payload.status);
+    if (fields.status) {
+      body.set("status", fields.status);
     }
 
-    if (payload.correctiveActions !== undefined) {
-      body.set("correctiveActions", payload.correctiveActions);
+    if (fields.correctiveActions !== undefined) {
+      body.set("correctiveActions", fields.correctiveActions);
     }
 
-    payload.correctiveActionAttachments?.forEach((attachment) => {
-      body.append("correctiveActionAttachments", attachment);
+    correctiveAttachments?.forEach((attachment) => {
+      body.append("correctiveAttachments", attachment);
     });
   }
 
