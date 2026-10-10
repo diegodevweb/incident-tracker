@@ -7,8 +7,13 @@ import { Topbar } from "@/components/dashboard/topbar";
 import { fetchIncidents } from "@/lib/api";
 import { incidentFilterLabel } from "@/lib/labels";
 import { getAuthSession, getInitials } from "@/lib/session";
-import type { AuthSession, Incident, IncidentFilter } from "@/lib/types";
+import type {
+  AuthSession,
+  IncidentFilter,
+  IncidentListPage,
+} from "@/lib/types";
 import { IncidentList } from "./incident-list";
+import { IncidentsPagination } from "./incidents-pagination";
 
 const filterOrder: IncidentFilter[] = [
   "ALL",
@@ -24,6 +29,7 @@ type IncidentsPageClientProps = {
     status?: string;
     source?: string;
     client?: string;
+    page?: string;
   };
 };
 
@@ -35,15 +41,22 @@ function resolveFilter(value?: string): IncidentFilter {
   return "ALL";
 }
 
+function resolvePage(value?: string) {
+  const page = Number(value);
+
+  return Number.isInteger(page) && page >= 1 ? page : 1;
+}
+
 export function IncidentsPageClient({
-  initialSearchParams: { filter, q, status, source, client },
+  initialSearchParams: { filter, q, status, source, client, page: pageParam },
 }: IncidentsPageClientProps) {
   const router = useRouter();
   const [session] = useState<AuthSession | null>(() => getAuthSession());
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [listPage, setListPage] = useState<IncidentListPage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const activeFilter = resolveFilter(filter);
+  const page = resolvePage(pageParam);
   const activeRole = session?.user.role ?? "CLIENT";
   const authenticatedClientId =
     session?.user.role === "CLIENT"
@@ -76,6 +89,7 @@ export function IncidentsPageClient({
         ? {
             clientId: authenticatedClientId,
             source: "DASHBOARD",
+            page,
           }
         : {
             q,
@@ -88,51 +102,60 @@ export function IncidentsPageClient({
                   : source,
             environment: activeFilter === "PRODUCTION" ? "production" : undefined,
             client,
+            page,
           };
 
     void fetchIncidents(apiQuery)
       .then((data) => {
         setLoadError(null);
-        setIncidents(data);
+        setListPage(data);
       })
       .catch(() => {
-        setIncidents([]);
+        setListPage(null);
         setLoadError("Não foi possível carregar os tickets.");
       });
-  }, [activeFilter, activeRole, authError, authenticatedClientId, client, q, session, source, status]);
+  }, [
+    activeFilter,
+    activeRole,
+    authError,
+    authenticatedClientId,
+    client,
+    page,
+    q,
+    session,
+    source,
+    status,
+  ]);
+
+  const incidents = listPage?.items ?? [];
+  // Os totais vêm do servidor (conjunto filtrado inteiro); a página só tem uma fatia.
+  const total = listPage?.total ?? 0;
+  const byStatus = listPage?.summary.byStatus;
+  const byPriority = listPage?.summary.byPriority;
+  const bySource = listPage?.summary.bySource;
 
   const summaryCards =
     activeRole === "CLIENT"
       ? [
-          { label: "Meus tickets", value: incidents.length },
-          {
-            label: "Em aberto",
-            value: incidents.filter((incident) => incident.status === "OPEN").length,
-          },
-          {
-            label: "Em andamento",
-            value: incidents.filter((incident) => incident.status === "IN_PROGRESS").length,
-          },
-          {
-            label: "Resolvidos",
-            value: incidents.filter((incident) => incident.status === "RESOLVED").length,
-          },
+          { label: "Meus tickets", value: total },
+          { label: "Em aberto", value: byStatus?.OPEN ?? 0 },
+          { label: "Em andamento", value: byStatus?.IN_PROGRESS ?? 0 },
+          { label: "Resolvidos", value: byStatus?.RESOLVED ?? 0 },
         ]
       : [
-          { label: "Total", value: incidents.length },
-          {
-            label: "Abertos",
-            value: incidents.filter((incident) => incident.status === "OPEN").length,
-          },
-          {
-            label: "Críticos",
-            value: incidents.filter((incident) => incident.priority === "CRITICAL").length,
-          },
-          {
-            label: "Webhook",
-            value: incidents.filter((incident) => incident.source === "WEBHOOK").length,
-          },
+          { label: "Total", value: total },
+          { label: "Abertos", value: byStatus?.OPEN ?? 0 },
+          { label: "Críticos", value: byPriority?.CRITICAL ?? 0 },
+          { label: "Webhook", value: bySource?.WEBHOOK ?? 0 },
         ];
+
+  const activeParams = {
+    ...(activeFilter !== "ALL" ? { filter: activeFilter } : {}),
+    q,
+    status,
+    source,
+    client,
+  };
 
   return (
     <div>
@@ -198,6 +221,15 @@ export function IncidentsPageClient({
         ) : null}
 
         <IncidentList incidents={incidents} />
+
+        {listPage ? (
+          <IncidentsPagination
+            page={listPage.page}
+            pageSize={listPage.pageSize}
+            total={listPage.total}
+            params={activeParams}
+          />
+        ) : null}
       </div>
     </div>
   );

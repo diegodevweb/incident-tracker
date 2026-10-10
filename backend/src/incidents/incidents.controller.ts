@@ -17,6 +17,7 @@ import { IncidentsService } from './incidents.service';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
 import { ErrorLogsApiKeyGuard } from './guards/error-logs-api-key.guard';
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
+import { ListErrorLogsQueryDto } from './dto/list-error-logs-query.dto';
 import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
@@ -128,8 +129,8 @@ export class IncidentsController {
 
   @Get('error-logs')
   @UseGuards(ErrorLogsApiKeyGuard)
-  getErrorLogs() {
-    return this.incidentsService.getErrorLogs();
+  getErrorLogs(@Query() query: ListErrorLogsQueryDto) {
+    return this.incidentsService.getErrorLogs(query);
   }
 
   @Get(':id')

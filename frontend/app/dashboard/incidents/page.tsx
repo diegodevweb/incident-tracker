@@ -9,6 +9,7 @@ export default async function IncidentsPage({
     status?: string;
     source?: string;
     client?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;

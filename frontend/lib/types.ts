@@ -161,3 +161,17 @@ export type MonthlyReport = {
   preventiveActions: MonthlyReportPreventiveAction[];
   technicalIndicators: TechnicalIndicator[];
 };
+
+export type IncidentListSummary = {
+  byStatus: Record<IncidentStatus, number>;
+  byPriority: Record<IncidentLevel, number>;
+  bySource: Record<IncidentSource, number>;
+};
+
+export type IncidentListPage = {
+  items: Incident[];
+  page: number;
+  pageSize: number;
+  total: number;
+  summary: IncidentListSummary;
+};

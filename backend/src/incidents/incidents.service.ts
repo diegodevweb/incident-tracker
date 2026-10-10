@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -16,6 +17,7 @@ import {
   UserRole,
 } from '@prisma/client';
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
+import { ListErrorLogsQueryDto } from './dto/list-error-logs-query.dto';
 import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
@@ -24,6 +26,12 @@ import { StorageService } from '../storage/storage.types';
 import { detectImageType } from '../storage/detect-image-type';
 import { truncateFilename } from './filenames';
 import { MAX_VARCHAR_LENGTH } from './limits';
+import {
+  DEFAULT_ERROR_LOGS_PAGE_SIZE,
+  DEFAULT_PAGE_SIZE,
+  MAX_REPORT_RANGE_DAYS,
+} from './pagination';
+import { PUBLIC_CLIENT_SELECT } from './public-client';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 
@@ -36,11 +44,19 @@ type UploadedAttachment = {
 
 type IncidentWithRelations = Prisma.IncidentGetPayload<{
   include: {
-    client: true;
+    client: { select: typeof PUBLIC_CLIENT_SELECT };
     attachments: true;
     logs: true;
   };
 }>;
+
+const toCounts = <K extends string>(
+  keys: readonly K[],
+  rows: { value: K; count: number }[],
+) =>
+  Object.fromEntries(
+    keys.map((key) => [key, rows.find((row) => row.value === key)?.count ?? 0]),
+  ) as Record<K, number>;
 
 @Injectable()
 export class IncidentsService {
@@ -143,23 +159,63 @@ export class IncidentsService {
         : {}),
     };
 
-    const incidents = await this.prisma.incident.findMany({
-      where,
-      include: {
-        client: true,
-        attachments: true,
-        logs: {
-          orderBy: {
-            occurredAt: 'desc',
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
 
-    return Promise.all(incidents.map((incident) => this.resolveIncidentAttachmentUrls(incident)));
+    const [items, total, byStatus, byPriority, bySource] = await Promise.all([
+      this.prisma.incident.findMany({
+        where,
+        // A lista não usa logs nem anexos: ficam só no detalhe, que também assina as URLs.
+        include: {
+          client: { select: PUBLIC_CLIENT_SELECT },
+        },
+        // O id desempata createdAt iguais para uma página não repetir nem pular linhas.
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.incident.count({ where }),
+      this.prisma.incident.groupBy({
+        by: ['status'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.incident.groupBy({
+        by: ['priority'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.incident.groupBy({
+        by: ['source'],
+        where,
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      items,
+      page,
+      pageSize,
+      total,
+      // Contagens do conjunto filtrado inteiro, não só da página.
+      summary: {
+        byStatus: toCounts(
+          Object.values(IncidentStatus),
+          byStatus.map((row) => ({ value: row.status, count: row._count._all })),
+        ),
+        byPriority: toCounts(
+          Object.values(IncidentLevel),
+          byPriority.map((row) => ({
+            value: row.priority,
+            count: row._count._all,
+          })),
+        ),
+        bySource: toCounts(
+          Object.values(IncidentSource),
+          bySource.map((row) => ({ value: row.source, count: row._count._all })),
+        ),
+      },
+    };
   }
 
   async createIncident(
@@ -204,7 +260,7 @@ export class IncidentsService {
             : {}),
         },
         include: {
-          client: true,
+          client: { select: PUBLIC_CLIENT_SELECT },
           attachments: true,
           logs: true,
         },
@@ -221,7 +277,7 @@ export class IncidentsService {
     const incident = await this.prisma.incident.findUnique({
       where: { id },
       include: {
-        client: true,
+        client: { select: PUBLIC_CLIENT_SELECT },
         attachments: true,
         logs: {
           orderBy: {
@@ -244,6 +300,8 @@ export class IncidentsService {
     const startDate = new Date(query.startDate);
     const endDate = new Date(query.endDate);
 
+    this.assertReportRange(startDate, endDate);
+
     const incidents = await this.prisma.incident.findMany({
       where: {
         createdAt: {
@@ -253,12 +311,16 @@ export class IncidentsService {
         ...this.buildScopedClientFilter(user, query.clientId),
       },
       include: {
-        client: true,
-        attachments: true,
+        client: { select: PUBLIC_CLIENT_SELECT },
+        // O relatório só usa os anexos das ações corretivas e o último log.
+        attachments: {
+          where: { category: AttachmentCategory.CORRECTIVE_ACTION },
+        },
         logs: {
           orderBy: {
             occurredAt: 'desc',
           },
+          take: 1,
         },
       },
       orderBy: {
@@ -266,7 +328,11 @@ export class IncidentsService {
       },
     });
     const incidentsWithAttachmentUrls = await Promise.all(
-      incidents.map((incident) => this.resolveIncidentAttachmentUrls(incident)),
+      incidents.map((incident) =>
+        incident.correctiveActions
+          ? this.resolveIncidentAttachmentUrls(incident)
+          : incident,
+      ),
     );
 
     const entries = incidentsWithAttachmentUrls.map((incident) => {
@@ -424,7 +490,7 @@ export class IncidentsService {
               : {}),
           },
           include: {
-            client: true,
+            client: { select: PUBLIC_CLIENT_SELECT },
             attachments: true,
             logs: {
               orderBy: {
@@ -457,14 +523,17 @@ export class IncidentsService {
     });
   }
 
-  async getErrorLogs() {
+  async getErrorLogs(query: ListErrorLogsQueryDto = {}) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? DEFAULT_ERROR_LOGS_PAGE_SIZE;
+
     const incidentList = await this.prisma.incidentLog.findMany({
       include: {
         incident: true,
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     });
 
     if (!incidentList || incidentList.length === 0) {
@@ -510,7 +579,7 @@ export class IncidentsService {
       },
       include: {
         logs: true,
-        client: true,
+        client: { select: PUBLIC_CLIENT_SELECT },
       },
     });
 
@@ -519,6 +588,22 @@ export class IncidentsService {
       message: 'Erro cadastrado com sucesso',
       data: incidentLog,
     };
+  }
+
+  private assertReportRange(startDate: Date, endDate: Date) {
+    if (endDate < startDate) {
+      throw new BadRequestException(
+        'A data final deve ser igual ou posterior à data inicial',
+      );
+    }
+
+    const maxRangeMs = MAX_REPORT_RANGE_DAYS * 24 * 60 * 60 * 1000;
+
+    if (endDate.getTime() - startDate.getTime() > maxRangeMs) {
+      throw new BadRequestException(
+        `O período do relatório não pode passar de ${MAX_REPORT_RANGE_DAYS} dias`,
+      );
+    }
   }
 
   private buildScopedClientFilter(user: JwtPayload, requestedClientId?: number) {
