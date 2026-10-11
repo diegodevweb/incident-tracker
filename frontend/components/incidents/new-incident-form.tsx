@@ -8,15 +8,15 @@ import {
   incidentEnvironmentLabel,
   userRoleLabel,
 } from "@/lib/labels";
-import { getAuthSession } from "@/lib/session";
-import type { AuthSession, IncidentEnvironment, IncidentLevel } from "@/lib/types";
+import { useAuthSession } from "@/components/dashboard/auth-session-provider";
+import type { IncidentEnvironment, IncidentLevel } from "@/lib/types";
 
 const priorityOptions: IncidentLevel[] = ["CRITICAL", "ERROR", "WARNING", "INFO"];
 const environmentOptions: IncidentEnvironment[] = ["production", "staging", "local"];
 
 export function NewIncidentForm() {
   const router = useRouter();
-  const [session] = useState<AuthSession | null>(() => getAuthSession());
+  const session = useAuthSession();
   const role = session?.user.role ?? "CLIENT";
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

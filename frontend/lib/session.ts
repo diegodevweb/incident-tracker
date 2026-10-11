@@ -7,21 +7,6 @@ export function dashboardPathForRole(role: UserRole) {
   return "/dashboard/incidents";
 }
 
-function readCookie(name: string) {
-  if (typeof document === "undefined") {
-    return null;
-  }
-
-  const value = document.cookie
-    .split("; ")
-    .find((entry) => entry.startsWith(`${name}=`))
-    ?.split("=")
-    .slice(1)
-    .join("=");
-
-  return value ? decodeURIComponent(value) : null;
-}
-
 export function getInitials(fullName: string) {
   return fullName
     .split(" ")
@@ -39,9 +24,9 @@ export function saveAuthSession(session: AuthSession) {
   document.cookie = `${AUTH_SESSION_STORAGE_KEY}=${encodeURIComponent(JSON.stringify(session))}; path=/; SameSite=Lax`;
 }
 
-export function getAuthSession() {
-  const rawSession = readCookie(AUTH_SESSION_STORAGE_KEY);
-
+// Recebe o valor do cookie da sessão já decodificado, como o Next entrega no
+// servidor. Os componentes leem a sessão com useAuthSession.
+export function parseAuthSession(rawSession: string | null) {
   if (!rawSession) {
     return null;
   }

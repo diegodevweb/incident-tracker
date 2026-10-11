@@ -1,42 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 type ThemeName = "light" | "dark";
 
 const storageKey = "incident-tracker-theme";
 
-function getPreferredTheme(): ThemeName {
-  if (typeof window === "undefined") {
-    return "light";
-  }
+// O tema mora no data-theme do <html>, aplicado pelo script do layout raiz
+// antes da primeira pintura. O servidor não conhece o tema guardado no
+// navegador, então renderiza "light" e o botão se acerta logo depois da
+// hidratação, sem diferença entre o HTML do servidor e o do cliente.
+function subscribeToTheme(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
 
-  const storedTheme = window.localStorage.getItem(storageKey);
-  if (storedTheme === "light" || storedTheme === "dark") {
-    return storedTheme;
-  }
+  return () => observer.disconnect();
+}
 
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
+function getAppliedTheme(): ThemeName {
+  return document.documentElement.getAttribute("data-theme") === "dark"
     ? "dark"
     : "light";
 }
 
-function applyTheme(theme: ThemeName) {
-  document.documentElement.setAttribute("data-theme", theme);
+function getServerTheme(): ThemeName {
+  return "light";
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<ThemeName>(getPreferredTheme);
+  const theme = useSyncExternalStore(
+    subscribeToTheme,
+    getAppliedTheme,
+    getServerTheme,
+  );
   const isDark = theme === "dark";
-
-  useEffect(() => {
-    applyTheme(theme);
-  }, [theme]);
 
   function toggleTheme() {
     const nextTheme: ThemeName = isDark ? "light" : "dark";
-    setTheme(nextTheme);
-    applyTheme(nextTheme);
+    document.documentElement.setAttribute("data-theme", nextTheme);
     window.localStorage.setItem(storageKey, nextTheme);
   }
 

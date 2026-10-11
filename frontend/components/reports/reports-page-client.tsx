@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
 import { fetchMonthlyReport } from "@/lib/api";
-import { getAuthSession, getInitials } from "@/lib/session";
-import type { AuthSession, MonthlyReport } from "@/lib/types";
+import { getInitials } from "@/lib/session";
+import type { MonthlyReport } from "@/lib/types";
 import { MonthlyReportView } from "./monthly-report-view";
 
 export function ReportsPageClient({
@@ -16,7 +17,7 @@ export function ReportsPageClient({
   endDate: string;
 }) {
   const router = useRouter();
-  const [session] = useState<AuthSession | null>(() => getAuthSession());
+  const session = useAuthSession();
   const [report, setReport] = useState<MonthlyReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
