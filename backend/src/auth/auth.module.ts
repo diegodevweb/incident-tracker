@@ -31,5 +31,6 @@ import { JwtStrategy } from './jwt.strategy';
     LoginRateLimitService,
     JwtStrategy,
   ],
+  exports: [AuthService],
 })
 export class AuthModule {}

@@ -66,16 +66,14 @@ export type DashboardSummary = {
   webhook: number;
 };
 
-export type UserProfile = {
+/** A conta de quem está logado (GET /account). */
+export type AccountProfile = {
   id: number;
-  role: UserRole;
-  fullName: string;
+  name: string;
   email: string;
-  phone: string;
-  companyName: string;
-  document: string;
-  plan: string;
-  preferredContact: string;
+  role: UserRole;
+  mustChangePassword: boolean;
+  createdAt: string;
 };
 
 export type AuthenticatedUser = {
@@ -84,21 +82,30 @@ export type AuthenticatedUser = {
   email: string;
   role: UserRole;
   clientId?: number | null;
+  /** Senha temporária: o painel só libera a troca de senha. */
+  mustChangePassword?: boolean;
 };
 
 export type AuthSession = {
   user: AuthenticatedUser;
 };
 
+/** Cliente como o admin vê (GET /clients). */
 export type ClientAccount = {
   id: number;
-  companyName: string;
-  contactName: string;
+  name: string;
   email: string;
-  phone: string;
-  environment: IncidentEnvironment;
-  activeIncidents: number;
-  slaPlan: string;
+  createdAt: string;
+  disabledAt: string | null;
+  mustChangePassword: boolean;
+  openIncidents: number;
+};
+
+export type ClientListPage = {
+  items: ClientAccount[];
+  total: number;
+  page: number;
+  pageSize: number;
 };
 
 export type SlaRule = {

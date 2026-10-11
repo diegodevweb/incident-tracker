@@ -6,6 +6,8 @@ import { AppService } from './app.service';
 import { IncidentsModule } from './incidents/incidents.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
+import { AccountModule } from './account/account.module';
+import { ClientsModule } from './clients/clients.module';
 import { StorageModule } from './storage/storage.module';
 import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
 @Module({
@@ -18,6 +20,8 @@ import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
     StorageModule,
     IncidentsModule,
     WebhookKeysModule,
+    AccountModule,
+    ClientsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

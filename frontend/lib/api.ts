@@ -1,5 +1,8 @@
 import type {
+  AccountProfile,
   AuthSession,
+  ClientAccount,
+  ClientListPage,
   Incident,
   IncidentEnvironment,
   IncidentEvent,
@@ -52,6 +55,32 @@ type BackendIncident = {
   }[];
 };
 
+/**
+ * Erro de uma chamada à API, com a mensagem do backend quando ele manda uma
+ * (o Nest responde { message } com texto ou lista de textos).
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function readErrorMessage(text: string, status: number) {
+  try {
+    const { message } = JSON.parse(text) as { message?: unknown };
+
+    if (typeof message === "string") return message;
+    if (Array.isArray(message)) return message.join(". ");
+  } catch {
+    // Corpo não é JSON: cai na mensagem genérica.
+  }
+
+  return text || `Erro ao consumir API: ${status}`;
+}
+
 function getApiBaseUrl() {
   return "/api";
 }
@@ -91,7 +120,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
 
     const text = await response.text();
-    throw new Error(text || `Erro ao consumir API: ${response.status}`);
+    throw new ApiError(response.status, readErrorMessage(text, response.status));
   }
 
   return response.json() as Promise<T>;
@@ -262,4 +291,70 @@ export async function login(payload: { email: string; password: string }) {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchAccount() {
+  return apiFetch<AccountProfile>("/account");
+}
+
+export async function updateAccount(payload: { name: string }) {
+  return apiFetch<AccountProfile>("/account", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Troca a senha; a rota do Next grava o token novo desta sessão. */
+export async function changePassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+}) {
+  return apiFetch<AuthSession>("/account/password", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchClients(query: { page?: number; q?: string }) {
+  const params = new URLSearchParams();
+
+  if (query.page && query.page > 1) params.set("page", String(query.page));
+  if (query.q) params.set("q", query.q);
+
+  return apiFetch<ClientListPage>(
+    `/clients${params.size ? `?${params.toString()}` : ""}`,
+  );
+}
+
+/** A senha temporária só vem nesta resposta. */
+export async function createClient(payload: { name: string; email: string }) {
+  return apiFetch<{ client: ClientAccount; temporaryPassword: string }>(
+    "/clients",
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export async function updateClient(
+  id: number,
+  payload: { name?: string; email?: string },
+) {
+  return apiFetch<ClientAccount>(`/clients/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** A senha temporária só vem nesta resposta. */
+export async function resetClientPassword(id: number) {
+  return apiFetch<{ temporaryPassword: string }>(
+    `/clients/${id}/password-reset`,
+    { method: "POST" },
+  );
+}
+
+export async function setClientDisabled(id: number, disabled: boolean) {
+  return apiFetch<ClientAccount>(
+    `/clients/${id}/${disabled ? "disable" : "enable"}`,
+    { method: "POST" },
+  );
 }

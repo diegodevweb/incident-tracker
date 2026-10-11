@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -42,6 +46,19 @@ export class AuthService {
 
     this.loginRateLimitService.reset(ipAddress, normalizedEmail);
 
+    // Só chega aqui com a senha certa, então dizer que a conta está desativada
+    // não ajuda quem tenta adivinhar e-mails.
+    if (user.disabledAt) {
+      throw new ForbiddenException(
+        'Conta desativada. Fale com o administrador.',
+      );
+    }
+
+    return this.issueSession(user);
+  }
+
+  /** Token novo para o usuário, com a versão de token atual dele. */
+  async issueSession(user: User) {
     return {
       accessToken: await this.jwtService.signAsync({
         sub: user.id,
@@ -67,6 +84,7 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role,
+      mustChangePassword: user.mustChangePassword,
     };
   }
 }

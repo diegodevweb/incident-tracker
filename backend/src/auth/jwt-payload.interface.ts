@@ -4,9 +4,14 @@ export interface JwtPayload {
   sub: number;
   email: string;
   role: UserRole;
+  /** Vem do banco a cada requisição (não do token); ver JwtAuthGuard. */
+  mustChangePassword?: boolean;
 }
 
-export interface JwtTokenPayload extends JwtPayload {
+export interface JwtTokenPayload extends Omit<
+  JwtPayload,
+  'mustChangePassword'
+> {
   /** Versão do token do usuário na emissão; muda no logout e invalida o token. */
   tv: number;
 }

@@ -20,8 +20,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   /**
-   * O papel vem do banco, não do token: usuário removido ou rebaixado perde o
-   * acesso na hora, e o logout (que muda tokenVersion) invalida o token.
+   * O papel vem do banco, não do token: usuário removido, desativado ou
+   * rebaixado perde o acesso na hora, e o logout (que muda tokenVersion)
+   * invalida o token.
    */
   async validate(payload: JwtTokenPayload): Promise<JwtPayload> {
     if (typeof payload.sub !== 'number') {
@@ -30,13 +31,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, role: true, tokenVersion: true },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        tokenVersion: true,
+        mustChangePassword: true,
+        disabledAt: true,
+      },
     });
 
-    if (!user || user.tokenVersion !== payload.tv) {
+    if (!user || user.disabledAt || user.tokenVersion !== payload.tv) {
       throw new UnauthorizedException();
     }
 
-    return { sub: user.id, email: user.email, role: user.role };
+    return {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword,
+    };
   }
 }

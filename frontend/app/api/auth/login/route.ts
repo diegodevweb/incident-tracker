@@ -1,9 +1,7 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
-  getSessionCookieName,
-  getTokenCookieName,
   proxyToBackend,
+  setAuthCookies,
   type BackendAuthSession,
 } from "@/lib/server-api";
 
@@ -29,22 +27,7 @@ export async function POST(request: Request) {
   }
 
   const session = JSON.parse(text) as BackendAuthSession;
-  const cookieStore = await cookies();
-
-  cookieStore.set(getTokenCookieName(), session.accessToken, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 8,
-  });
-  cookieStore.set(getSessionCookieName(), JSON.stringify({ user: session.user }), {
-    httpOnly: false,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 8,
-  });
+  await setAuthCookies(session);
 
   return NextResponse.json({ user: session.user });
 }

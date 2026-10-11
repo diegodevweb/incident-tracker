@@ -1,4 +1,8 @@
-import { HttpException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -19,6 +23,8 @@ describe('AuthService', () => {
     password: '$2b$10$stored-hash',
     role: UserRole.CLIENT,
     tokenVersion: 3,
+    mustChangePassword: false,
+    disabledAt: null as Date | null,
   };
 
   let prisma: {
@@ -54,6 +60,50 @@ describe('AuthService', () => {
   });
 
   describe('login', () => {
+    // Entradas montadas em tempo de execução: não são credenciais de verdade.
+    const typedPassword = 'p'.repeat(16);
+
+    it('tells the front when the password is temporary', async () => {
+      compare.mockResolvedValue(true);
+      prisma.user.findUnique.mockResolvedValue({
+        ...user,
+        mustChangePassword: true,
+      });
+
+      const result = await service.login(
+        { email: user.email, password: typedPassword },
+        ip,
+      );
+
+      expect(result.user.mustChangePassword).toBe(true);
+    });
+
+    it('refuses a disabled account only after the password matches', async () => {
+      compare.mockResolvedValue(true);
+      prisma.user.findUnique.mockResolvedValue({
+        ...user,
+        disabledAt: new Date(),
+      });
+
+      await expect(
+        service.login({ email: user.email, password: typedPassword }, ip),
+      ).rejects.toThrow(ForbiddenException);
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(rateLimit.registerFailure).not.toHaveBeenCalled();
+    });
+
+    it('answers a disabled account with a wrong password like any failure', async () => {
+      compare.mockResolvedValue(false);
+      prisma.user.findUnique.mockResolvedValue({
+        ...user,
+        disabledAt: new Date(),
+      });
+
+      await expect(
+        service.login({ email: user.email, password: typedPassword }, ip),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
     it('signs a token carrying the user token version', async () => {
       compare.mockResolvedValue(true);
 
@@ -74,6 +124,7 @@ describe('AuthService', () => {
         name: 'Cliente',
         email: 'cliente@example.com',
         role: UserRole.CLIENT,
+        mustChangePassword: false,
       });
       expect(rateLimit.reset).toHaveBeenCalledWith(ip, 'cliente@example.com');
     });

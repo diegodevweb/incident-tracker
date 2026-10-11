@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { AuthSessionProvider } from "@/components/dashboard/auth-session-provider";
+import { ForcedPasswordChange } from "@/components/dashboard/forced-password-change";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { getSessionCookieName } from "@/lib/server-api";
+import { parseAuthSession } from "@/lib/session";
 
 export default async function DashboardLayout({
   children,
@@ -10,13 +12,18 @@ export default async function DashboardLayout({
   children: ReactNode;
 }) {
   const rawSession = (await cookies()).get(getSessionCookieName())?.value ?? null;
+  const session = parseAuthSession(rawSession);
 
   return (
     <AuthSessionProvider rawSession={rawSession}>
-      <div className="min-h-screen md:grid md:grid-cols-[18rem_1fr]">
-        <Sidebar />
-        <main className="app-main min-h-screen">{children}</main>
-      </div>
+      {session?.user.mustChangePassword ? (
+        <ForcedPasswordChange userName={session.user.name} />
+      ) : (
+        <div className="min-h-screen md:grid md:grid-cols-[18rem_1fr]">
+          <Sidebar />
+          <main className="app-main min-h-screen">{children}</main>
+        </div>
+      )}
     </AuthSessionProvider>
   );
 }

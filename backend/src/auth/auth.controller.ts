@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import type { AuthenticatedRequest } from './authenticated-request.type';
+import { AllowPendingPasswordChange } from './allow-pending-password-change.decorator';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
@@ -29,6 +30,7 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard)
+  @AllowPendingPasswordChange()
   async logout(@Req() request: AuthenticatedRequest) {
     await this.authService.logout(request.user.sub);
   }

@@ -10,6 +10,8 @@ describe('JwtStrategy.validate', () => {
     email: 'db@example.com',
     role: UserRole.CLIENT,
     tokenVersion: 2,
+    mustChangePassword: false,
+    disabledAt: null as Date | null,
   };
   let findUnique: jest.Mock;
   let strategy: JwtStrategy;
@@ -34,7 +36,24 @@ describe('JwtStrategy.validate', () => {
       sub: 4,
       email: 'db@example.com',
       role: UserRole.CLIENT,
+      mustChangePassword: false,
     });
+  });
+
+  it('passes on whether the password still has to be changed', async () => {
+    findUnique.mockResolvedValue({ ...dbUser, mustChangePassword: true });
+
+    await expect(
+      strategy.validate({ sub: 4, email: 'a', role: UserRole.CLIENT, tv: 2 }),
+    ).resolves.toMatchObject({ mustChangePassword: true });
+  });
+
+  it('rejects a disabled account', async () => {
+    findUnique.mockResolvedValue({ ...dbUser, disabledAt: new Date() });
+
+    await expect(
+      strategy.validate({ sub: 4, email: 'a', role: UserRole.CLIENT, tv: 2 }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   it('rejects when the user was removed', async () => {
