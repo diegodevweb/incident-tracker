@@ -22,6 +22,8 @@ describe('IncidentsService access rules', () => {
       create: jest.Mock;
       findMany: jest.Mock;
       findUnique: jest.Mock;
+      count: jest.Mock;
+      groupBy: jest.Mock;
     };
   };
   let service: IncidentsService;
@@ -37,6 +39,8 @@ describe('IncidentsService access rules', () => {
         }),
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
+        groupBy: jest.fn().mockResolvedValue([]),
       },
     };
     service = new IncidentsService(

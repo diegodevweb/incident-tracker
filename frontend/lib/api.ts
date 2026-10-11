@@ -4,6 +4,8 @@ import type {
   IncidentEnvironment,
   IncidentEvent,
   IncidentLevel,
+  IncidentListPage,
+  IncidentListSummary,
   IncidentSource,
   IncidentStatus,
   MonthlyReport,
@@ -26,14 +28,15 @@ type BackendIncident = {
     name: string;
     email: string;
   };
-  attachments: {
+  // A listagem não traz anexos nem logs; só o detalhe.
+  attachments?: {
     id: number;
     filename: string;
     mimeType: string;
     url: string;
     category?: "GENERAL" | "CORRECTIVE_ACTION";
   }[];
-  logs: {
+  logs?: {
     id: number;
     message: string;
     level: IncidentLevel;
@@ -106,8 +109,8 @@ function mapIncident(incident: BackendIncident): Incident {
     environment: incident.environment,
     clientName: incident.client.name,
     createdAt: incident.createdAt,
-    attachments: incident.attachments,
-    logs: incident.logs.map((log) => ({
+    attachments: incident.attachments ?? [],
+    logs: (incident.logs ?? []).map((log) => ({
       id: log.id,
       message: log.message,
       level: log.level,
@@ -124,7 +127,17 @@ function mapIncident(incident: BackendIncident): Incident {
   };
 }
 
-export async function fetchIncidents(query?: Record<string, string | number | undefined>) {
+type BackendIncidentPage = {
+  items: BackendIncident[];
+  page: number;
+  pageSize: number;
+  total: number;
+  summary: IncidentListSummary;
+};
+
+export async function fetchIncidents(
+  query?: Record<string, string | number | undefined>,
+): Promise<IncidentListPage> {
   const params = new URLSearchParams();
 
   Object.entries(query ?? {}).forEach(([key, value]) => {
@@ -133,11 +146,11 @@ export async function fetchIncidents(query?: Record<string, string | number | un
     }
   });
 
-  const data = await apiFetch<BackendIncident[]>(
+  const data = await apiFetch<BackendIncidentPage>(
     `/incidents${params.size ? `?${params.toString()}` : ""}`,
   );
 
-  return data.map(mapIncident);
+  return { ...data, items: data.items.map(mapIncident) };
 }
 
 export async function fetchIncident(id: number) {

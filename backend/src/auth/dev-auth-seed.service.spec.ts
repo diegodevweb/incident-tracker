@@ -27,8 +27,8 @@ describe('DevAuthSeedService', () => {
 
   const validEnv = {
     SEED_DEV_USERS: 'true',
-    SEED_ADMIN_PASSWORD: 'admin-password-123',
-    SEED_CLIENT_PASSWORD: 'client-password-123',
+    SEED_ADMIN_PASSWORD: 'correct-horse-battery-staple',
+    SEED_CLIENT_PASSWORD: 'purple-monkey-dishwasher-9',
   };
 
   it('does nothing without the explicit SEED_DEV_USERS flag', async () => {
@@ -68,6 +68,28 @@ describe('DevAuthSeedService', () => {
 
     await expect(service.onModuleInit()).rejects.toThrow(
       'SEED_CLIENT_PASSWORD',
+    );
+  });
+
+  it('refuses a seed password that contains the start of the e-mail', async () => {
+    const { service } = buildService({
+      ...validEnv,
+      SEED_ADMIN_PASSWORD: 'admin-password-123',
+    });
+
+    await expect(service.onModuleInit()).rejects.toThrow(
+      'SEED_ADMIN_PASSWORD precisa',
+    );
+  });
+
+  it('refuses a common seed password', async () => {
+    const { service } = buildService({
+      ...validEnv,
+      SEED_CLIENT_PASSWORD: 'Password1234',
+    });
+
+    await expect(service.onModuleInit()).rejects.toThrow(
+      'não ser uma senha comum',
     );
   });
 

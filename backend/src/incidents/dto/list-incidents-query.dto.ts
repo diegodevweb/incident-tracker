@@ -5,13 +5,28 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { IncidentSource, IncidentStatus } from '@prisma/client';
 import { MAX_VARCHAR_LENGTH } from '../limits';
+import { MAX_PAGE_SIZE } from '../pagination';
 
 export class ListIncidentsQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_PAGE_SIZE)
+  pageSize?: number;
+
   @IsOptional()
   @IsString()
   @MaxLength(MAX_VARCHAR_LENGTH)

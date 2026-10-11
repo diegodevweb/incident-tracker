@@ -23,6 +23,7 @@ describe('IncidentsController authorization', () => {
     createIncident: jest.fn().mockResolvedValue({ message: 'ok' }),
     updateIncident: jest.fn().mockResolvedValue({ id: 1 }),
     getMonthlyReport: jest.fn().mockResolvedValue({}),
+    getErrorLogs: jest.fn().mockResolvedValue([]),
     createPreventiveAction: jest.fn().mockResolvedValue({ id: 1 }),
   };
 
@@ -382,6 +383,62 @@ describe('IncidentsController authorization', () => {
         .expect(400);
 
       expect(incidentsService.updateIncident).not.toHaveBeenCalled();
+    });
+  });
+  describe('pagination query validation', () => {
+    const originalApiKey = process.env.ERROR_LOGS_API_KEY;
+
+    beforeAll(() => {
+      process.env.ERROR_LOGS_API_KEY = 'webhook-key';
+    });
+
+    afterAll(() => {
+      process.env.ERROR_LOGS_API_KEY = originalApiKey;
+    });
+
+    const listIncidents = (query: Record<string, string>) =>
+      http()
+        .get('/incidents')
+        .query(query)
+        .set('Authorization', `Bearer ${clientToken()}`);
+    const listErrorLogs = (query: Record<string, string>) =>
+      http()
+        .get('/incidents/error-logs')
+        .query(query)
+        .set('x-api-key', 'webhook-key');
+
+    it.each<Record<string, string>>([
+      { pageSize: '101' },
+      { pageSize: '0' },
+      { pageSize: '-5' },
+      { pageSize: 'abc' },
+      { page: '0' },
+      { page: '1.5' },
+      { page: 'abc' },
+    ])('rejects the incident list query %j', async (query) => {
+      await listIncidents(query).expect(400);
+
+      expect(incidentsService.getIncidents).not.toHaveBeenCalled();
+    });
+
+    it('passes numeric page and pageSize to the service', async () => {
+      await listIncidents({ page: '2', pageSize: '50' }).expect(200);
+
+      expect(incidentsService.getIncidents).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 2, pageSize: 50 }),
+        expect.anything(),
+      );
+    });
+
+    it('accepts the maximum page size of 100', async () => {
+      await listIncidents({ pageSize: '100' }).expect(200);
+    });
+
+    it('caps the error log page size at 500', async () => {
+      await listErrorLogs({ pageSize: '501' }).expect(400);
+      await listErrorLogs({ pageSize: '500' }).expect(200);
+
+      expect(incidentsService.getErrorLogs).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -3,8 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
-
-const MIN_SEED_PASSWORD_LENGTH = 12;
+import { checkPasswordPolicy } from './password-policy';
 
 @Injectable()
 export class DevAuthSeedService implements OnModuleInit {
@@ -27,21 +26,23 @@ export class DevAuthSeedService implements OnModuleInit {
       return;
     }
 
+    const adminEmail =
+      this.configService.get<string>('SEED_ADMIN_EMAIL') ?? 'admin@example.com';
+    const clientEmail =
+      this.configService.get<string>('SEED_CLIENT_EMAIL') ??
+      'cliente@example.com';
+
     const devUsers = [
       {
         name: 'Admin Dev',
-        email:
-          this.configService.get<string>('SEED_ADMIN_EMAIL') ??
-          'admin@example.com',
-        password: this.getSeedPassword('SEED_ADMIN_PASSWORD'),
+        email: adminEmail,
+        password: this.getSeedPassword('SEED_ADMIN_PASSWORD', adminEmail),
         role: UserRole.ADMIN,
       },
       {
         name: 'Cliente Dev',
-        email:
-          this.configService.get<string>('SEED_CLIENT_EMAIL') ??
-          'cliente@example.com',
-        password: this.getSeedPassword('SEED_CLIENT_PASSWORD'),
+        email: clientEmail,
+        password: this.getSeedPassword('SEED_CLIENT_PASSWORD', clientEmail),
         role: UserRole.CLIENT,
       },
     ];
@@ -69,13 +70,12 @@ export class DevAuthSeedService implements OnModuleInit {
     this.logger.log('Usuários de desenvolvimento garantidos para autenticação');
   }
 
-  private getSeedPassword(key: string) {
+  private getSeedPassword(key: string, email: string) {
     const password = this.configService.getOrThrow<string>(key);
+    const problems = checkPasswordPolicy(password, { email });
 
-    if (password.length < MIN_SEED_PASSWORD_LENGTH) {
-      throw new Error(
-        `${key} precisa ter pelo menos ${MIN_SEED_PASSWORD_LENGTH} caracteres`,
-      );
+    if (problems.length > 0) {
+      throw new Error(`${key} precisa ${problems.join(', ')}`);
     }
 
     return password;
