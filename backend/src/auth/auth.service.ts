@@ -6,6 +6,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { LoginRateLimitService } from './login-rate-limit.service';
 
+// Hash bcrypt (custo 10) de uma senha aleatória descartada. É comparado quando o
+// e-mail não existe, para o login levar o mesmo tempo com ou sem usuário.
+export const DUMMY_PASSWORD_HASH =
+  '$2b$10$0cP4LD2EPKWyAxCJz0f0xemJis7A0IrUUst30frydgCUcl08b/Owu';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -16,12 +21,8 @@ export class AuthService {
 
   async login({ email, password }: LoginDto, ipAddress: string) {
     const normalizedEmail = email.toLowerCase();
-    const rateLimitKey = this.loginRateLimitService.buildKey(
-      ipAddress,
-      normalizedEmail,
-    );
 
-    this.loginRateLimitService.check(rateLimitKey);
+    this.loginRateLimitService.check(ipAddress, normalizedEmail);
 
     const user = await this.prisma.user.findUnique({
       where: {
@@ -29,28 +30,35 @@ export class AuthService {
       },
     });
 
-    if (!user) {
-      this.loginRateLimitService.registerFailure(rateLimitKey);
+    const passwordMatches = await bcrypt.compare(
+      password,
+      user?.password ?? DUMMY_PASSWORD_HASH,
+    );
+
+    if (!user || !passwordMatches) {
+      this.loginRateLimitService.registerFailure(ipAddress, normalizedEmail);
       throw new UnauthorizedException('Credenciais inválidas');
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.password);
-
-    if (!passwordMatches) {
-      this.loginRateLimitService.registerFailure(rateLimitKey);
-      throw new UnauthorizedException('Credenciais inválidas');
-    }
-
-    this.loginRateLimitService.reset(rateLimitKey);
+    this.loginRateLimitService.reset(ipAddress, normalizedEmail);
 
     return {
       accessToken: await this.jwtService.signAsync({
         sub: user.id,
         role: user.role,
         email: user.email,
+        tv: user.tokenVersion,
       }),
       user: this.serializeUser(user),
     };
+  }
+
+  /** Invalida todos os tokens já emitidos para o usuário. */
+  async logout(userId: number) {
+    await this.prisma.user.updateMany({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
   }
 
   private serializeUser(user: User) {

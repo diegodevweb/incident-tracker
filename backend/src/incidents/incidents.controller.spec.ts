@@ -7,6 +7,7 @@ import { UserRole } from '@prisma/client';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import { JwtStrategy } from '../auth/jwt.strategy';
+import { PrismaService } from '../prisma/prisma.service';
 import { IncidentsController } from './incidents.controller';
 import { IncidentsService } from './incidents.service';
 import { MAX_INCIDENT_ATTACHMENTS, MAX_UPLOAD_FILE_BYTES } from './limits';
@@ -25,9 +26,43 @@ describe('IncidentsController authorization', () => {
     createPreventiveAction: jest.fn().mockResolvedValue({ id: 1 }),
   };
 
+  type FakeUser = {
+    id: number;
+    email: string;
+    role: UserRole;
+    tokenVersion: number;
+  };
+  const users = new Map<number, FakeUser>();
+  const resetUsers = () => {
+    users.clear();
+    users.set(1, {
+      id: 1,
+      email: 'admin@example.com',
+      role: UserRole.ADMIN,
+      tokenVersion: 0,
+    });
+    users.set(2, {
+      id: 2,
+      email: 'cliente@example.com',
+      role: UserRole.CLIENT,
+      tokenVersion: 0,
+    });
+  };
+  const prismaFake = {
+    user: {
+      findUnique: ({ where }: { where: { id: number } }) =>
+        Promise.resolve(users.get(where.id) ?? null),
+    },
+  };
+
   const tokenFor = (role: UserRole, secret = JWT_SECRET) =>
     jwtService.sign(
-      { sub: role === UserRole.ADMIN ? 1 : 2, email: 'u@example.com', role },
+      {
+        sub: role === UserRole.ADMIN ? 1 : 2,
+        email: 'u@example.com',
+        role,
+        tv: 0,
+      },
       { secret },
     );
   const http = () => request(app.getHttpServer() as Server);
@@ -53,6 +88,7 @@ describe('IncidentsController authorization', () => {
       controllers: [IncidentsController],
       providers: [
         JwtStrategy,
+        { provide: PrismaService, useValue: prismaFake },
         { provide: IncidentsService, useValue: incidentsService },
       ],
     }).compile();
@@ -75,6 +111,59 @@ describe('IncidentsController authorization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetUsers();
+  });
+
+  describe('token validity is checked against the database', () => {
+    const listIncidents = (token: string) =>
+      http().get('/incidents').set('Authorization', `Bearer ${token}`);
+
+    it('uses the role stored in the database, not the one in the token', async () => {
+      users.get(1)!.role = UserRole.CLIENT;
+
+      await http()
+        .get('/incidents/reports/monthly')
+        .query(monthlyQuery)
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(403);
+
+      expect(incidentsService.getMonthlyReport).not.toHaveBeenCalled();
+    });
+
+    it('hands the service the database role of a demoted user', async () => {
+      users.get(1)!.role = UserRole.CLIENT;
+
+      await listIncidents(adminToken()).expect(200);
+
+      expect(incidentsService.getIncidents).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ sub: 1, role: UserRole.CLIENT }),
+      );
+    });
+
+    it('rejects the token of a user that no longer exists', async () => {
+      users.delete(2);
+
+      await listIncidents(clientToken()).expect(401);
+
+      expect(incidentsService.getIncidents).not.toHaveBeenCalled();
+    });
+
+    it('rejects a token whose version was revoked', async () => {
+      users.get(2)!.tokenVersion = 1;
+
+      await listIncidents(clientToken()).expect(401);
+    });
+
+    it('rejects a token issued before token versions existed', async () => {
+      const legacyToken = jwtService.sign({
+        sub: 2,
+        email: 'cliente@example.com',
+        role: UserRole.CLIENT,
+      });
+
+      await listIncidents(legacyToken).expect(401);
+    });
   });
 
   describe('admin-only routes', () => {

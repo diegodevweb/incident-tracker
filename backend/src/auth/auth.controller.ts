@@ -1,7 +1,17 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
+import type { AuthenticatedRequest } from './authenticated-request.type';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -9,16 +19,17 @@ export class AuthController {
 
   @Post('login')
   login(@Body() body: LoginDto, @Req() request: Request) {
-    return this.authService.login(body, this.resolveClientIp(request));
+    // request.ip só considera X-Forwarded-For dentro do limite de TRUST_PROXY.
+    return this.authService.login(
+      body,
+      request.ip ?? request.socket.remoteAddress ?? 'unknown',
+    );
   }
 
-  private resolveClientIp(request: Request) {
-    const forwardedFor = request.headers['x-forwarded-for'];
-
-    if (typeof forwardedFor === 'string' && forwardedFor.length > 0) {
-      return forwardedFor.split(',')[0].trim();
-    }
-
-    return request.ip ?? request.socket.remoteAddress ?? 'unknown';
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard)
+  async logout(@Req() request: AuthenticatedRequest) {
+    await this.authService.logout(request.user.sub);
   }
 }

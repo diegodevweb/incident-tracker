@@ -13,6 +13,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { IncidentsService } from './incidents.service';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
 import { ErrorLogsApiKeyGuard } from './guards/error-logs-api-key.guard';
@@ -29,6 +30,8 @@ import type { AuthenticatedRequest } from '../auth/authenticated-request.type';
 import {
   MAX_CORRECTIVE_ATTACHMENTS,
   MAX_INCIDENT_ATTACHMENTS,
+  UPLOAD_THROTTLE,
+  WEBHOOK_THROTTLE,
   uploadLimits,
 } from './limits';
 
@@ -63,6 +66,7 @@ export class IncidentsController {
   }
 
   @Post()
+  @Throttle({ default: UPLOAD_THROTTLE })
   @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FilesInterceptor(
@@ -81,6 +85,7 @@ export class IncidentsController {
   }
 
   @Patch(':id')
+  @Throttle({ default: UPLOAD_THROTTLE })
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @UseInterceptors(
@@ -115,6 +120,7 @@ export class IncidentsController {
   }
 
   @Post('error-logs')
+  @Throttle({ default: WEBHOOK_THROTTLE })
   @UseGuards(ErrorLogsApiKeyGuard)
   createErrorLog(@Body() body: CreateErrorLogDto) {
     return this.incidentsService.createErrorLog(body);

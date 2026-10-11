@@ -53,6 +53,18 @@ function getApiBaseUrl() {
   return "/api";
 }
 
+async function endSession() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+  } finally {
+    window.location.assign("/login");
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = init?.body instanceof FormData;
   const headers = new Headers(init?.headers);
@@ -69,6 +81,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    // Sessão revogada (logout em outro lugar, usuário removido) ou expirada:
+    // limpa os cookies e volta ao login. O próprio login devolve 401 para senha errada.
+    if (response.status === 401 && path !== "/auth/login") {
+      void endSession();
+    }
+
     const text = await response.text();
     throw new Error(text || `Erro ao consumir API: ${response.status}`);
   }
