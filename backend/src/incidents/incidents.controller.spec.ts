@@ -8,6 +8,10 @@ import type { Server } from 'node:http';
 import request from 'supertest';
 import { JwtStrategy } from '../auth/jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  WebhookKeysService,
+  generateWebhookKey,
+} from '../webhook-keys/webhook-keys.service';
 import { IncidentsController } from './incidents.controller';
 import { IncidentsService } from './incidents.service';
 import { MAX_INCIDENT_ATTACHMENTS, MAX_UPLOAD_FILE_BYTES } from './limits';
@@ -24,7 +28,17 @@ describe('IncidentsController authorization', () => {
     updateIncident: jest.fn().mockResolvedValue({ id: 1 }),
     getMonthlyReport: jest.fn().mockResolvedValue({}),
     getErrorLogs: jest.fn().mockResolvedValue([]),
+    getErrorLog: jest.fn().mockResolvedValue({ id: 1 }),
+    createErrorLog: jest.fn().mockResolvedValue({ message: 'ok' }),
     createPreventiveAction: jest.fn().mockResolvedValue({ id: 1 }),
+  };
+
+  // Gerada em tempo de execução: nada parecido com credencial fica no código.
+  const webhookKey = generateWebhookKey().key;
+  const webhookKeys = {
+    authenticate: jest.fn((key?: string) =>
+      Promise.resolve(key === webhookKey ? { id: 1, clientId: 2 } : null),
+    ),
   };
 
   type FakeUser = {
@@ -91,6 +105,7 @@ describe('IncidentsController authorization', () => {
         JwtStrategy,
         { provide: PrismaService, useValue: prismaFake },
         { provide: IncidentsService, useValue: incidentsService },
+        { provide: WebhookKeysService, useValue: webhookKeys },
       ],
     }).compile();
 
@@ -386,16 +401,6 @@ describe('IncidentsController authorization', () => {
     });
   });
   describe('pagination query validation', () => {
-    const originalApiKey = process.env.ERROR_LOGS_API_KEY;
-
-    beforeAll(() => {
-      process.env.ERROR_LOGS_API_KEY = 'webhook-key';
-    });
-
-    afterAll(() => {
-      process.env.ERROR_LOGS_API_KEY = originalApiKey;
-    });
-
     const listIncidents = (query: Record<string, string>) =>
       http()
         .get('/incidents')
@@ -405,7 +410,7 @@ describe('IncidentsController authorization', () => {
       http()
         .get('/incidents/error-logs')
         .query(query)
-        .set('x-api-key', 'webhook-key');
+        .set('x-api-key', webhookKey);
 
     it.each<Record<string, string>>([
       { pageSize: '101' },
@@ -439,6 +444,77 @@ describe('IncidentsController authorization', () => {
       await listErrorLogs({ pageSize: '500' }).expect(200);
 
       expect(incidentsService.getErrorLogs).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('webhook routes', () => {
+    const errorLog = {
+      title: 'Falha',
+      description: 'Falha na integração',
+      message: 'timeout',
+      environment: 'production',
+    };
+    const postErrorLog = (body: Record<string, unknown>, key?: string) => {
+      const call = http().post('/incidents/error-logs');
+      return (key ? call.set('x-api-key', key) : call).send(body);
+    };
+
+    it('rejects requests without a key', async () => {
+      await postErrorLog(errorLog).expect(401);
+
+      expect(incidentsService.createErrorLog).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown key', async () => {
+      await postErrorLog(errorLog, generateWebhookKey().key).expect(401);
+
+      expect(incidentsService.createErrorLog).not.toHaveBeenCalled();
+    });
+
+    it('does not accept a user token in place of the key', async () => {
+      await http()
+        .post('/incidents/error-logs')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send(errorLog)
+        .expect(401);
+    });
+
+    it("hands the key's client to the service", async () => {
+      await postErrorLog(errorLog, webhookKey).expect(201);
+
+      expect(incidentsService.createErrorLog).toHaveBeenCalledWith(errorLog, {
+        id: 1,
+        clientId: 2,
+      });
+    });
+
+    it.each([
+      ['clientId', 3],
+      ['source', 'DASHBOARD'],
+      ['status', 'RESOLVED'],
+    ])('rejects %s in the body', async (field, value) => {
+      await postErrorLog({ ...errorLog, [field]: value }, webhookKey).expect(
+        400,
+      );
+
+      expect(incidentsService.createErrorLog).not.toHaveBeenCalled();
+    });
+
+    it("reads logs only within the key's client", async () => {
+      await http()
+        .get('/incidents/error-log/5')
+        .set('x-api-key', webhookKey)
+        .expect(200);
+      await http()
+        .get('/incidents/error-logs')
+        .set('x-api-key', webhookKey)
+        .expect(200);
+
+      expect(incidentsService.getErrorLog).toHaveBeenCalledWith(5, 2);
+      expect(incidentsService.getErrorLogs).toHaveBeenCalledWith(
+        expect.anything(),
+        2,
+      );
     });
   });
 });

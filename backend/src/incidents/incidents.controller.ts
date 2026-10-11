@@ -16,7 +16,6 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { IncidentsService } from './incidents.service';
 import { CreateErrorLogDto } from './dto/create-error-log.dto';
-import { ErrorLogsApiKeyGuard } from './guards/error-logs-api-key.guard';
 import { ListIncidentsQueryDto } from './dto/list-incidents-query.dto';
 import { ListErrorLogsQueryDto } from './dto/list-error-logs-query.dto';
 import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
@@ -28,6 +27,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthenticatedRequest } from '../auth/authenticated-request.type';
+import {
+  WebhookKeyGuard,
+  type WebhookRequest,
+} from '../webhook-keys/webhook-key.guard';
 import {
   MAX_CORRECTIVE_ATTACHMENTS,
   MAX_INCIDENT_ATTACHMENTS,
@@ -122,21 +125,33 @@ export class IncidentsController {
 
   @Post('error-logs')
   @Throttle({ default: WEBHOOK_THROTTLE })
-  @UseGuards(ErrorLogsApiKeyGuard)
-  createErrorLog(@Body() body: CreateErrorLogDto) {
-    return this.incidentsService.createErrorLog(body);
+  @UseGuards(WebhookKeyGuard)
+  createErrorLog(
+    @Body() body: CreateErrorLogDto,
+    @Req() request: WebhookRequest,
+  ) {
+    return this.incidentsService.createErrorLog(body, request.webhookKey);
   }
 
   @Get('error-log/:id')
-  @UseGuards(ErrorLogsApiKeyGuard)
-  getErrorLog(@Param('id', ParseIntPipe) id: number) {
-    return this.incidentsService.getErrorLog(id);
+  @UseGuards(WebhookKeyGuard)
+  getErrorLog(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: WebhookRequest,
+  ) {
+    return this.incidentsService.getErrorLog(id, request.webhookKey.clientId);
   }
 
   @Get('error-logs')
-  @UseGuards(ErrorLogsApiKeyGuard)
-  getErrorLogs(@Query() query: ListErrorLogsQueryDto) {
-    return this.incidentsService.getErrorLogs(query);
+  @UseGuards(WebhookKeyGuard)
+  getErrorLogs(
+    @Query() query: ListErrorLogsQueryDto,
+    @Req() request: WebhookRequest,
+  ) {
+    return this.incidentsService.getErrorLogs(
+      query,
+      request.webhookKey.clientId,
+    );
   }
 
   @Get(':id')

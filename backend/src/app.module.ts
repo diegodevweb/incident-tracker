@@ -7,6 +7,7 @@ import { IncidentsModule } from './incidents/incidents.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { StorageModule } from './storage/storage.module';
+import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -16,6 +17,7 @@ import { StorageModule } from './storage/storage.module';
     AuthModule,
     StorageModule,
     IncidentsModule,
+    WebhookKeysModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

@@ -55,7 +55,7 @@ External Systems (Laravel, APIs)
 
 ### Error Log Ingestion
 
-* Receive error logs via API (`POST /error-logs`)
+* Receive error logs via API (`POST /incidents/error-logs`), authenticated by a per-client webhook key
 * Structured storage of logs with metadata
 * Support for multiple sources (systems, services, integrations)
 
@@ -94,14 +94,18 @@ Each error log includes:
 
 ### Create Error Log
 
-**POST** `/error-logs`
+**POST** `/incidents/error-logs`
+
+Header `x-api-key: <webhook key of the client>`. The incident is created for the client that owns the key, always with status `OPEN` and source `WEBHOOK`; sending `clientId`, `source` or `status` in the body returns 400.
 
 ```json
 {
-  "message": "NFe rejeitada",
+  "title": "NFe rejeitada",
+  "description": "Rejeição na autorização da nota",
+  "message": "cStat 696",
   "level": "WARNING",
+  "priority": "ERROR",
   "environment": "production",
-  "source": "attimo",
   "occurredAt": "2026-04-24T16:21:53.000Z",
   "metadata": {
     "cStat": "696",
@@ -109,6 +113,16 @@ Each error log includes:
   }
 }
 ```
+
+`GET /incidents/error-logs` and `GET /incidents/error-log/:id` use the same header and only return logs of the key's client.
+
+### Webhook keys (admin only)
+
+Each client gets its own keys. Only a SHA-256 hash is stored; the full key is shown once, in the creation response. To rotate a key, create a new one, update the integration and revoke the old one.
+
+* **POST** `/clients/:clientId/webhook-keys` with `{ "name": "ERP produção" }`: creates a key and returns it in `key`
+* **GET** `/clients/:clientId/webhook-keys`: lists the keys (prefix, name, creation, last use, revocation), never the key itself
+* **DELETE** `/clients/:clientId/webhook-keys/:keyId`: revokes the key
 
 ---
 

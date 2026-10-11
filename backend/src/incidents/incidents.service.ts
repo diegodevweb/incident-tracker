@@ -41,6 +41,7 @@ import {
 } from './incident-events';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import type { AuthenticatedWebhookKey } from '../webhook-keys/webhook-keys.service';
 
 type UploadedAttachment = {
   buffer: Buffer;
@@ -572,11 +573,13 @@ export class IncidentsService {
     });
   }
 
-  async getErrorLogs(query: ListErrorLogsQueryDto = {}) {
+  // As rotas do webhook só enxergam os logs do cliente dono da chave.
+  async getErrorLogs(query: ListErrorLogsQueryDto, clientId: number) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? DEFAULT_ERROR_LOGS_PAGE_SIZE;
 
     const incidentList = await this.prisma.incidentLog.findMany({
+      where: { incident: { clientId } },
       include: {
         incident: true,
       },
@@ -592,9 +595,9 @@ export class IncidentsService {
     return incidentList;
   }
 
-  async getErrorLog(id: number) {
-    const incidentLog = await this.prisma.incidentLog.findUnique({
-      where: { id },
+  async getErrorLog(id: number, clientId: number) {
+    const incidentLog = await this.prisma.incidentLog.findFirst({
+      where: { id, incident: { clientId } },
       include: {
         incident: true,
       },
@@ -607,8 +610,13 @@ export class IncidentsService {
     return incidentLog;
   }
 
-  async createErrorLog(data: CreateErrorLogDto) {
-    const status = data.status ?? IncidentStatus.OPEN;
+  // O cliente vem da chave do webhook, nunca do corpo. Origem e status são
+  // fixos: a integração só abre chamados, quem atende muda o status.
+  async createErrorLog(
+    data: CreateErrorLogDto,
+    webhookKey: AuthenticatedWebhookKey,
+  ) {
+    const status = IncidentStatus.OPEN;
 
     const incidentLog = await this.prisma.incident.create({
       data: {
@@ -616,9 +624,9 @@ export class IncidentsService {
         description: data.description,
         status,
         priority: data.priority ?? IncidentLevel.ERROR,
-        source: data.source ?? IncidentSource.WEBHOOK,
+        source: IncidentSource.WEBHOOK,
         environment: data.environment,
-        clientId: data.clientId,
+        clientId: webhookKey.clientId,
         logs: {
           create: {
             message: data.message,
@@ -629,10 +637,11 @@ export class IncidentsService {
         },
         events: {
           // Sem autor: quem cria pelo webhook é a integração, não um usuário.
+          // A chave usada fica registrada para rastrear o que ela criou.
           create: {
             type: IncidentEventType.INCIDENT_CREATED,
             actorId: null,
-            metadata: { status },
+            metadata: { status, webhookKeyId: webhookKey.id },
           },
         },
       },

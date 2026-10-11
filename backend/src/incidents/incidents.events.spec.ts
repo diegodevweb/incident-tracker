@@ -152,20 +152,22 @@ describe('IncidentsService audit events', () => {
     });
   });
 
-  it('records webhook incidents without an author', async () => {
-    await service.createErrorLog({
-      clientId: 2,
-      title: 'Timeout',
-      description: 'SEFAZ fora',
-      message: 'ETIMEDOUT',
-      environment: 'production',
-    });
+  it('records webhook incidents without an author, with the key used', async () => {
+    await service.createErrorLog(
+      {
+        title: 'Timeout',
+        description: 'SEFAZ fora',
+        message: 'ETIMEDOUT',
+        environment: 'production',
+      },
+      { id: 7, clientId: 2 },
+    );
 
     expect(lastWrite(prisma.incident.create).data.events).toEqual({
       create: {
         type: IncidentEventType.INCIDENT_CREATED,
         actorId: null,
-        metadata: { status: IncidentStatus.OPEN },
+        metadata: { status: IncidentStatus.OPEN, webhookKeyId: 7 },
       },
     });
   });
