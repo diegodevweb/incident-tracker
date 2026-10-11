@@ -77,7 +77,11 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
             <IncidentTimeline incident={incident} />
 
             <div className="grid gap-6">
-              <IncidentManagementPanel incident={incident} role={activeRole} />
+              <IncidentManagementPanel
+                incident={incident}
+                role={activeRole}
+                onUpdated={setIncident}
+              />
             </div>
 
             <aside className="app-surface card border">
