@@ -40,16 +40,27 @@ enum UserRole {
   ADMIN
   CLIENT
 }
+
+enum IncidentEventType {
+  INCIDENT_CREATED
+  STATUS_CHANGED
+  INCIDENT_RESOLVED
+  CORRECTIVE_ACTION_ADDED
+  CORRECTIVE_ACTION_REMOVED
+  ATTACHMENT_ADDED
+}
+
 model User {
-  id           Int        @id @default(autoincrement())
-  name         String
-  email        String     @unique
-  password     String
-  role         UserRole   @default(CLIENT)
-  tokenVersion Int        @default(0)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  incidents    Incident[]
+  id             Int             @id @default(autoincrement())
+  name           String
+  email          String          @unique
+  password       String
+  role           UserRole        @default(CLIENT)
+  tokenVersion   Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  incidents      Incident[]
+  incidentEvents IncidentEvent[]
 }
 
 model Incident {
@@ -66,9 +77,10 @@ model Incident {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  attachments IncidentAttachment[]
-  logs        IncidentLog[]
+  attachments       IncidentAttachment[]
+  logs              IncidentLog[]
   preventiveActions PreventiveAction[]
+  events            IncidentEvent[]
 }
 
 model IncidentAttachment {
@@ -104,4 +116,21 @@ model PreventiveAction {
   updatedAt   DateTime  @updatedAt
 
   incident Incident? @relation(fields: [incidentId], references: [id])
+}
+
+/// Trilha de auditoria do chamado: quem mudou o quê e quando. Só recebe inserts.
+model IncidentEvent {
+  id         Int               @id @default(autoincrement())
+  incidentId Int
+  type       IncidentEventType
+  /// Quem fez a mudança; nulo quando o chamado veio do webhook.
+  actorId    Int?
+  metadata   Json?
+  createdAt  DateTime          @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id])
+  /// Restrict: apagar um usuário não pode apagar nem anonimizar a autoria dos eventos.
+  actor    User?    @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([incidentId, createdAt])
 }
