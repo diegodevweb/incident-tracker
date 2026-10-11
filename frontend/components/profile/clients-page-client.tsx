@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
 import { mockClients } from "@/lib/mock-data";
-import { getAuthSession, getInitials } from "@/lib/session";
-import type { AuthSession } from "@/lib/types";
+import { getInitials } from "@/lib/session";
 import { ClientListEditor } from "./client-list-editor";
 
 export function ClientsPageClient() {
   const router = useRouter();
-  const [session] = useState<AuthSession | null>(() => getAuthSession());
+  const session = useAuthSession();
   const isAdmin = session?.user.role === "ADMIN";
 
   useEffect(() => {

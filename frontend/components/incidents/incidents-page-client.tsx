@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
 import { fetchIncidents } from "@/lib/api";
 import { incidentFilterLabel } from "@/lib/labels";
-import { getAuthSession, getInitials } from "@/lib/session";
+import { getInitials } from "@/lib/session";
 import type {
-  AuthSession,
   IncidentFilter,
   IncidentListPage,
 } from "@/lib/types";
@@ -51,7 +51,7 @@ export function IncidentsPageClient({
   initialSearchParams: { filter, q, status, source, client, page: pageParam },
 }: IncidentsPageClientProps) {
   const router = useRouter();
-  const [session] = useState<AuthSession | null>(() => getAuthSession());
+  const session = useAuthSession();
   const [listPage, setListPage] = useState<IncidentListPage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
