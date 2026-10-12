@@ -138,6 +138,10 @@ Admins manage client accounts on the **Clientes** page (or the API below). There
 
 With a temporary password, the only things a user can do are read `GET /account`, change the password at `POST /account/password` (current and new password; the new one follows `src/auth/password-policy.ts`) and log out. Changing the password ends the user's other sessions. `PATCH /account` changes the user's own name.
 
+### Health check
+
+**GET** `/health` answers `200 {"status":"ok"}` when the database responds and `503 {"status":"error"}` when it does not. It needs no token and is not rate limited, so container and proxy health checks can poll it. Storage is not checked: without it only attachments fail.
+
 ---
 
 ## Running Locally
@@ -166,6 +170,22 @@ npx prisma migrate dev
 ```bash
 npm run start:dev
 ```
+
+### 5. Tests
+
+```bash
+npm test
+```
+
+Unit tests need no database. The e2e suite (`npm run test:e2e`) boots the whole API against a real MySQL and S3 and writes to the database, so it refuses to run unless the database name contains `e2e` or `test`. Create one (e.g. `incident_tracker_e2e`, as root in the compose MySQL), point `DATABASE_URL` to it, run `npx prisma migrate deploy` and then `npm run test:e2e`. The other variables come from `backend/.env`.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+
+* **Backend:** lint, type check (tests included), unit tests and build
+* **Backend e2e:** applies every migration from scratch on MySQL 8, checks that the migrations match `schema.prisma`, then runs the e2e suite with SeaweedFS as S3
+* **Frontend:** lint and production build
 
 ---
 
