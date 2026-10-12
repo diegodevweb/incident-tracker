@@ -85,7 +85,11 @@ export class IncidentsController {
     @UploadedFiles()
     attachments: UploadedAttachment[] = [],
   ) {
-    return this.incidentsService.createIncident(body, attachments, request.user);
+    return this.incidentsService.createIncident(
+      body,
+      attachments,
+      request.user,
+    );
   }
 
   @Patch(':id')

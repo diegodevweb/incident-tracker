@@ -26,7 +26,9 @@ export class StorageConfig {
   }
 
   get forcePathStyle() {
-    return this.configService.get<string>('STORAGE_FORCE_PATH_STYLE') === 'true';
+    return (
+      this.configService.get<string>('STORAGE_FORCE_PATH_STYLE') === 'true'
+    );
   }
 
   get signedUrlExpiresInSeconds() {

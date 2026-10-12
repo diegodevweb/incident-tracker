@@ -84,16 +84,21 @@ export class IncidentsService {
     private readonly storageService: StorageService,
   ) {}
 
-  private readonly firstResponseTargetByPriority: Record<IncidentLevel, string> =
-    {
-      CRITICAL: 'até 2h úteis',
-      ERROR: 'até 4h úteis',
-      WARNING: 'até 1 dia útil',
-      INFO: 'até 2 dias úteis',
-    };
+  private readonly firstResponseTargetByPriority: Record<
+    IncidentLevel,
+    string
+  > = {
+    CRITICAL: 'até 2h úteis',
+    ERROR: 'até 4h úteis',
+    WARNING: 'até 1 dia útil',
+    INFO: 'até 2 dias úteis',
+  };
 
   private readonly slaRules = (
-    Object.entries(this.firstResponseTargetByPriority) as [IncidentLevel, string][]
+    Object.entries(this.firstResponseTargetByPriority) as [
+      IncidentLevel,
+      string,
+    ][]
   ).map(([priority, firstResponseTarget]) => ({
     priority,
     firstResponseTarget,
@@ -444,7 +449,8 @@ export class IncidentsService {
           status: incident.status,
           createdAt: incident.updatedAt.toISOString(),
           attachments: incident.attachments.filter(
-            (attachment) => attachment.category === AttachmentCategory.CORRECTIVE_ACTION,
+            (attachment) =>
+              attachment.category === AttachmentCategory.CORRECTIVE_ACTION,
           ),
         })),
       preventiveActions: preventiveActions.map((action) => ({
@@ -651,7 +657,6 @@ export class IncidentsService {
       },
     });
 
-
     return {
       message: 'Erro cadastrado com sucesso',
       data: incidentLog,
@@ -674,7 +679,10 @@ export class IncidentsService {
     }
   }
 
-  private buildScopedClientFilter(user: JwtPayload, requestedClientId?: number) {
+  private buildScopedClientFilter(
+    user: JwtPayload,
+    requestedClientId?: number,
+  ) {
     if (user.role === UserRole.ADMIN) {
       return requestedClientId ? { clientId: requestedClientId } : {};
     }
