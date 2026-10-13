@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRef, useState, useTransition } from "react";
 import { updateIncident } from "@/lib/api";
 import { incidentStatusLabel } from "@/lib/labels";
 import type { Incident, IncidentStatus, UserRole } from "@/lib/types";
@@ -11,16 +10,18 @@ const statusOptions: IncidentStatus[] = ["OPEN", "PENDING", "IN_PROGRESS", "RESO
 export function IncidentManagementPanel({
   incident,
   role,
+  onUpdated,
 }: {
   incident: Incident;
   role: UserRole;
+  onUpdated: (incident: Incident) => void;
 }) {
-  const router = useRouter();
   const [status, setStatus] = useState<IncidentStatus>(incident.status);
   const [correctiveActions, setCorrectiveActions] = useState(
     incident.correctiveActions ?? "",
   );
   const [correctiveAttachmentFiles, setCorrectiveAttachmentFiles] = useState<File[]>([]);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -37,13 +38,17 @@ export function IncidentManagementPanel({
 
     startTransition(async () => {
       try {
-        await updateIncident(incident.id, {
+        const updatedIncident = await updateIncident(incident.id, {
           status,
           correctiveActions,
           correctiveAttachments: correctiveAttachmentFiles,
         });
+        onUpdated(updatedIncident);
+        setCorrectiveAttachmentFiles([]);
+        if (attachmentInputRef.current) {
+          attachmentInputRef.current.value = "";
+        }
         setFeedback("Chamado atualizado com sucesso.");
-        router.refresh();
       } catch {
         setError("Não foi possível atualizar o chamado.");
       }
@@ -107,6 +112,7 @@ export function IncidentManagementPanel({
               <label className="form-control">
                 <span className="label-text mb-2">Adicionar novos prints</span>
                 <input
+                  ref={attachmentInputRef}
                   type="file"
                   accept=".png,.jpg,.jpeg,image/png,image/jpeg"
                   multiple
