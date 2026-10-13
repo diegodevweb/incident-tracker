@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
 import { fetchIncident } from "@/lib/api";
-import { getAuthSession, getInitials } from "@/lib/session";
-import type { AuthSession, Incident } from "@/lib/types";
+import { getInitials } from "@/lib/session";
+import type { Incident } from "@/lib/types";
 import { IncidentDetails } from "./incident-details";
 import { IncidentManagementPanel } from "./incident-management-panel";
 import { IncidentTimeline } from "./incident-timeline";
 
 export function IncidentDetailsPageClient({ id }: { id: number }) {
   const router = useRouter();
-  const [session] = useState<AuthSession | null>(() => getAuthSession());
+  const session = useAuthSession();
   const [incident, setIncident] = useState<Incident | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);

@@ -1,17 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
 import { userRoleLabel } from "@/lib/labels";
 import { mockProfiles } from "@/lib/mock-data";
-import { getAuthSession, getInitials } from "@/lib/session";
-import type { AuthSession } from "@/lib/types";
+import { getInitials } from "@/lib/session";
 import { ProfileForm } from "./profile-form";
 
 export function ProfilePageClient() {
   const router = useRouter();
-  const [session] = useState<AuthSession | null>(() => getAuthSession());
+  const session = useAuthSession();
   const activeRole = session?.user.role ?? "CLIENT";
   const baseProfile = mockProfiles[activeRole];
   const profile = {

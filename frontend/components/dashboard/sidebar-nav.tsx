@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { userRoleLabel } from "@/lib/labels";
-import { getAuthSession } from "@/lib/session";
-import type { AuthSession, UserRole } from "@/lib/types";
+import type { UserRole } from "@/lib/types";
+import { useAuthSession } from "./auth-session-provider";
 
 const navItems: {
   href: string;
@@ -47,7 +46,7 @@ const navItems: {
 
 export function SidebarNav() {
   const pathname = usePathname();
-  const [session] = useState<AuthSession | null>(() => getAuthSession());
+  const session = useAuthSession();
   const role: UserRole = session?.user.role === "CLIENT" ? "CLIENT" : "ADMIN";
 
   return (
