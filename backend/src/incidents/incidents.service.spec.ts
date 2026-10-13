@@ -35,6 +35,7 @@ describe('IncidentsService access rules', () => {
           id: 10,
           attachments: [],
           logs: [],
+          events: [],
           client: {},
         }),
         findMany: jest.fn().mockResolvedValue([]),
@@ -115,6 +116,7 @@ describe('IncidentsService access rules', () => {
         clientId: 99,
         attachments: [],
         logs: [],
+        events: [],
         client: {},
       });
 
@@ -129,6 +131,7 @@ describe('IncidentsService access rules', () => {
         clientId: 99,
         attachments: [],
         logs: [],
+        events: [],
         client: {},
       });
 

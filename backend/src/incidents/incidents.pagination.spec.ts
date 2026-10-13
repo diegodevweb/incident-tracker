@@ -70,6 +70,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
     client: { id: 2, name: 'Cliente', email: 'cliente@example.com' },
     attachments: [],
     logs: [],
+    events: [],
     ...overrides,
   });
 

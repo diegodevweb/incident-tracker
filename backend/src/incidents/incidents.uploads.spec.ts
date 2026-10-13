@@ -51,6 +51,7 @@ describe('IncidentsService uploads', () => {
     clientId: 1,
     attachments: [],
     logs: [],
+    events: [],
     client: {},
   };
 

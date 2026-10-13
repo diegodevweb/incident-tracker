@@ -10,6 +10,7 @@ import { CreateErrorLogDto } from './dto/create-error-log.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AttachmentCategory,
+  IncidentEventType,
   IncidentLevel,
   IncidentSource,
   IncidentStatus,
@@ -32,6 +33,12 @@ import {
   MAX_REPORT_RANGE_DAYS,
 } from './pagination';
 import { PUBLIC_CLIENT_SELECT } from './public-client';
+import {
+  INCIDENT_EVENTS_QUERY,
+  attachmentAddedEvents,
+  incidentUpdateEvents,
+  toPublicIncidentEvent,
+} from './incident-events';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 
@@ -47,6 +54,15 @@ type IncidentWithRelations = Prisma.IncidentGetPayload<{
     client: { select: typeof PUBLIC_CLIENT_SELECT };
     attachments: true;
     logs: true;
+  };
+}>;
+
+type IncidentDetailRow = Prisma.IncidentGetPayload<{
+  include: {
+    client: { select: typeof PUBLIC_CLIENT_SELECT };
+    attachments: true;
+    logs: true;
+    events: typeof INCIDENT_EVENTS_QUERY;
   };
 }>;
 
@@ -240,12 +256,14 @@ export class IncidentsService {
       AttachmentCategory.GENERAL,
     );
 
+    const status = data.status ?? IncidentStatus.OPEN;
+
     const incident = await this.withUploadCleanup(generalAttachments, () =>
       this.prisma.incident.create({
         data: {
           title: data.title,
           description: data.description,
-          status: data.status ?? IncidentStatus.OPEN,
+          status,
           priority: data.priority ?? IncidentLevel.ERROR,
           source: IncidentSource.DASHBOARD,
           environment: data.environment,
@@ -264,18 +282,29 @@ export class IncidentsService {
                 },
               }
             : {}),
+          events: {
+            create: [
+              {
+                type: IncidentEventType.INCIDENT_CREATED,
+                actorId: user.sub,
+                metadata: { status },
+              },
+              ...attachmentAddedEvents(generalAttachments, user.sub),
+            ],
+          },
         },
         include: {
           client: { select: PUBLIC_CLIENT_SELECT },
           attachments: true,
           logs: true,
+          events: INCIDENT_EVENTS_QUERY,
         },
       }),
     );
 
     return {
       message: 'Ticket criado com sucesso',
-      data: await this.resolveIncidentAttachmentUrls(incident),
+      data: await this.presentIncidentDetail(incident),
     };
   }
 
@@ -290,6 +319,7 @@ export class IncidentsService {
             occurredAt: 'desc',
           },
         },
+        events: INCIDENT_EVENTS_QUERY,
       },
     });
 
@@ -299,7 +329,7 @@ export class IncidentsService {
 
     this.assertIncidentAccess(incident.clientId, user);
 
-    return this.resolveIncidentAttachmentUrls(incident);
+    return this.presentIncidentDetail(incident);
   }
 
   async getMonthlyReport(query: MonthlyReportQueryDto, user: JwtPayload) {
@@ -474,12 +504,25 @@ export class IncidentsService {
     user: JwtPayload,
     correctiveAttachments: UploadedAttachment[] = [],
   ) {
-    await this.getIncident(id, user);
+    const current = await this.getIncident(id, user);
 
     const uploadedCorrectiveAttachments = await this.uploadAttachments(
       correctiveAttachments,
       AttachmentCategory.CORRECTIVE_ACTION,
     );
+    const correctiveActions =
+      data.correctiveActions !== undefined
+        ? data.correctiveActions || null
+        : undefined;
+    // Gravados no mesmo update (escrita aninhada, numa transação só): não fica
+    // mudança sem evento nem evento de mudança que falhou.
+    const events = incidentUpdateEvents({
+      current,
+      status: data.status,
+      correctiveActions,
+      attachments: uploadedCorrectiveAttachments,
+      actorId: user.sub,
+    });
 
     const incident = await this.withUploadCleanup(
       uploadedCorrectiveAttachments,
@@ -488,12 +531,11 @@ export class IncidentsService {
           where: { id },
           data: {
             ...(data.status ? { status: data.status } : {}),
-            ...(data.correctiveActions !== undefined
-              ? { correctiveActions: data.correctiveActions || null }
-              : {}),
+            ...(correctiveActions !== undefined ? { correctiveActions } : {}),
             ...(uploadedCorrectiveAttachments.length
               ? { attachments: { create: uploadedCorrectiveAttachments } }
               : {}),
+            ...(events.length ? { events: { create: events } } : {}),
           },
           include: {
             client: { select: PUBLIC_CLIENT_SELECT },
@@ -503,11 +545,12 @@ export class IncidentsService {
                 occurredAt: 'desc',
               },
             },
+            events: INCIDENT_EVENTS_QUERY,
           },
         }),
     );
 
-    return this.resolveIncidentAttachmentUrls(incident);
+    return this.presentIncidentDetail(incident);
   }
 
   async createPreventiveAction(
@@ -565,11 +608,13 @@ export class IncidentsService {
   }
 
   async createErrorLog(data: CreateErrorLogDto) {
+    const status = data.status ?? IncidentStatus.OPEN;
+
     const incidentLog = await this.prisma.incident.create({
       data: {
         title: data.title,
         description: data.description,
-        status: data.status ?? IncidentStatus.OPEN,
+        status,
         priority: data.priority ?? IncidentLevel.ERROR,
         source: data.source ?? IncidentSource.WEBHOOK,
         environment: data.environment,
@@ -580,6 +625,14 @@ export class IncidentsService {
             level: data.level ?? IncidentLevel.ERROR,
             occurredAt: data.occurredAt ? new Date(data.occurredAt) : null,
             metadata: data.metadata ?? undefined,
+          },
+        },
+        events: {
+          // Sem autor: quem cria pelo webhook é a integração, não um usuário.
+          create: {
+            type: IncidentEventType.INCIDENT_CREATED,
+            actorId: null,
+            metadata: { status },
           },
         },
       },
@@ -715,6 +768,15 @@ export class IncidentsService {
         );
       }
     });
+  }
+
+  private async presentIncidentDetail(incident: IncidentDetailRow) {
+    const { events, ...rest } = incident;
+
+    return {
+      ...(await this.resolveIncidentAttachmentUrls(rest)),
+      events: events.map(toPublicIncidentEvent),
+    };
   }
 
   private async resolveIncidentAttachmentUrls(incident: IncidentWithRelations) {

@@ -50,6 +50,12 @@ function getEventContent(event: IncidentEvent) {
             : "Uma ação corretiva foi adicionada ao atendimento.",
         metadata: null,
       };
+    case "CORRECTIVE_ACTION_REMOVED":
+      return {
+        title: "Ação corretiva removida",
+        description: "O texto da ação corretiva foi apagado do atendimento.",
+        metadata: null,
+      };
     case "ATTACHMENT_ADDED":
       return {
         title: "Evidência anexada",
