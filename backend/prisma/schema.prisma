@@ -61,6 +61,7 @@ model User {
   updatedAt      DateTime        @updatedAt
   incidents      Incident[]
   incidentEvents IncidentEvent[]
+  webhookKeys    WebhookKey[]
 }
 
 model Incident {
@@ -133,4 +134,23 @@ model IncidentEvent {
   actor    User?    @relation(fields: [actorId], references: [id], onDelete: Restrict)
 
   @@index([incidentId, createdAt])
+}
+
+/// Chave de webhook de um cliente. Só o hash SHA-256 da chave é guardado; o
+/// prefixo é público e serve para achar a chave e identificá-la nas listagens.
+model WebhookKey {
+  id         Int       @id @default(autoincrement())
+  clientId   Int
+  name       String
+  prefix     String    @unique
+  keyHash    String    @db.Char(64)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  /// Revogar não apaga a linha: o histórico de quais chaves existiram fica.
+  revokedAt  DateTime?
+
+  /// Restrict: um cliente com chaves não pode ser apagado (desativar no F2).
+  client User @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  @@index([clientId])
 }

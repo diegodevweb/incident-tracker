@@ -1,24 +1,18 @@
 import {
   IsEnum,
-  IsInt,
   IsDateString,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
   MaxLength,
-  Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { IncidentLevel, IncidentSource, IncidentStatus } from '@prisma/client';
+import { IncidentLevel } from '@prisma/client';
 import { MAX_VARCHAR_LENGTH } from '../limits';
 
+// Sem clientId, source e status: o cliente sai da chave do webhook e o
+// chamado sempre nasce aberto e com origem WEBHOOK. Mandar esses campos dá 400.
 export class CreateErrorLogDto {
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  clientId!: number;
-
   @IsString()
   @IsNotEmpty()
   @MaxLength(MAX_VARCHAR_LENGTH)
@@ -44,16 +38,8 @@ export class CreateErrorLogDto {
   environment!: string;
 
   @IsOptional()
-  @IsEnum(IncidentStatus)
-  status?: IncidentStatus;
-
-  @IsOptional()
   @IsEnum(IncidentLevel)
   priority?: IncidentLevel;
-
-  @IsOptional()
-  @IsEnum(IncidentSource)
-  source?: IncidentSource;
 
   @IsOptional()
   @IsDateString()

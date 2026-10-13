@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   AttachmentCategory,
   IncidentLevel,
@@ -46,7 +46,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
       create: jest.Mock;
       update: jest.Mock;
     };
-    incidentLog: { findMany: jest.Mock };
+    incidentLog: { findMany: jest.Mock; findFirst: jest.Mock };
     preventiveAction: { findMany: jest.Mock };
   };
   let storage: {
@@ -84,7 +84,10 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
         create: jest.fn().mockResolvedValue(incidentRow()),
         update: jest.fn().mockResolvedValue(incidentRow()),
       },
-      incidentLog: { findMany: jest.fn().mockResolvedValue([{ id: 1 }]) },
+      incidentLog: {
+        findMany: jest.fn().mockResolvedValue([{ id: 1 }]),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       preventiveAction: { findMany: jest.fn().mockResolvedValue([]) },
     };
     storage = {
@@ -218,13 +221,15 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
       [
         'webhook',
         () =>
-          service.createErrorLog({
-            clientId: 2,
-            title: 't',
-            description: 'd',
-            message: 'm',
-            environment: 'production',
-          }),
+          service.createErrorLog(
+            {
+              title: 't',
+              description: 'd',
+              message: 'm',
+              environment: 'production',
+            },
+            { id: 1, clientId: 2 },
+          ),
         () => prisma.incident.create,
       ],
       [
@@ -316,9 +321,31 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
     });
   });
 
+  describe('POST /incidents/error-logs', () => {
+    it('takes the client from the webhook key and fixes origin and status', async () => {
+      await service.createErrorLog(
+        {
+          title: 't',
+          description: 'd',
+          message: 'm',
+          environment: 'production',
+        },
+        { id: 1, clientId: 2 },
+      );
+
+      expect(firstCall(prisma.incident.create)).toMatchObject({
+        data: {
+          clientId: 2,
+          source: IncidentSource.WEBHOOK,
+          status: IncidentStatus.OPEN,
+        },
+      });
+    });
+  });
+
   describe('GET /incidents/error-logs', () => {
     it('returns at most 100 logs by default', async () => {
-      await service.getErrorLogs({});
+      await service.getErrorLogs({}, 2);
 
       expect(firstCall(prisma.incidentLog.findMany)).toMatchObject({
         skip: 0,
@@ -327,12 +354,39 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
     });
 
     it('honors page and page size', async () => {
-      await service.getErrorLogs({ page: 2, pageSize: 50 });
+      await service.getErrorLogs({ page: 2, pageSize: 50 }, 2);
 
       expect(firstCall(prisma.incidentLog.findMany)).toMatchObject({
         skip: 50,
         take: 50,
       });
+    });
+
+    it("only lists the logs of the webhook key's client", async () => {
+      await service.getErrorLogs({}, 2);
+
+      expect(firstCall(prisma.incidentLog.findMany).where).toEqual({
+        incident: { clientId: 2 },
+      });
+    });
+  });
+
+  describe('GET /incidents/error-log/:id', () => {
+    it("looks the log up within the webhook key's client", async () => {
+      prisma.incidentLog.findFirst.mockResolvedValue({ id: 7 });
+
+      await service.getErrorLog(7, 2);
+
+      expect(firstCall(prisma.incidentLog.findFirst).where).toEqual({
+        id: 7,
+        incident: { clientId: 2 },
+      });
+    });
+
+    it("answers 404 for another client's log", async () => {
+      await expect(service.getErrorLog(7, 3)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

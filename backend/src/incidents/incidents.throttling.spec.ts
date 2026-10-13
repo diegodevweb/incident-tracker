@@ -11,6 +11,10 @@ import type { Server } from 'node:http';
 import request from 'supertest';
 import { JwtStrategy } from '../auth/jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  WebhookKeysService,
+  generateWebhookKey,
+} from '../webhook-keys/webhook-keys.service';
 import { IncidentsController } from './incidents.controller';
 import { IncidentsService } from './incidents.service';
 import { UPLOAD_THROTTLE, WEBHOOK_THROTTLE } from './limits';
@@ -20,7 +24,7 @@ const JWT_SECRET = 'test-secret-with-more-than-32-bytes-of-length';
 describe('Incidents throttling', () => {
   let app: INestApplication;
   let clientToken: string;
-  const originalApiKey = process.env.ERROR_LOGS_API_KEY;
+  const webhookKey = generateWebhookKey().key;
 
   const ticket = {
     title: 'Erro na emissão',
@@ -28,7 +32,6 @@ describe('Incidents throttling', () => {
     environment: 'production',
   };
   const errorLog = {
-    clientId: 2,
     title: 'Falha',
     description: 'Falha na integração',
     message: 'timeout',
@@ -44,7 +47,6 @@ describe('Incidents throttling', () => {
       .send(ticket);
 
   beforeAll(async () => {
-    process.env.ERROR_LOGS_API_KEY = 'webhook-key';
     const moduleRef = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -81,6 +83,15 @@ describe('Incidents throttling', () => {
             createErrorLog: jest.fn().mockResolvedValue({ message: 'ok' }),
           },
         },
+        {
+          provide: WebhookKeysService,
+          useValue: {
+            authenticate: (key?: string) =>
+              Promise.resolve(
+                key === webhookKey ? { id: 1, clientId: 2 } : null,
+              ),
+          },
+        },
       ],
     }).compile();
 
@@ -100,7 +111,6 @@ describe('Incidents throttling', () => {
   });
 
   afterAll(async () => {
-    process.env.ERROR_LOGS_API_KEY = originalApiKey;
     await app.close();
   });
 
@@ -122,7 +132,7 @@ describe('Incidents throttling', () => {
     for (let i = 0; i < UPLOAD_THROTTLE.limit + 5; i++) {
       await http()
         .post('/incidents/error-logs')
-        .set('x-api-key', 'webhook-key')
+        .set('x-api-key', webhookKey)
         .set('X-Forwarded-For', '198.51.100.3')
         .send(errorLog)
         .expect(201);
