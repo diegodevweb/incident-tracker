@@ -22,7 +22,7 @@ Este backend usa NestJS com Prisma e integrações externas. Priorize separaçã
 
 ## Storage
 - Use uma abstração de storage, como `StorageService`, desacoplada da regra de negócio.
-- Em ambiente local, use storage S3-compatible, como MinIO.
+- Em ambiente local, use storage S3-compatible, como o SeaweedFS do `docker-compose.yml`.
 - Em produção, a implementação deve poder apontar para AWS S3 por configuração.
 - Trate `key` ou `storageKey` como identidade persistente do objeto.
 - URLs assinadas devem ser geradas sob demanda e não tratadas como identificador definitivo.

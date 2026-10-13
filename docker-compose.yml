@@ -22,21 +22,23 @@ services:
     volumes:
       - redis_data:/data
 
-  minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    container_name: incident_tracker_minio
+  # Storage S3-compatível de desenvolvimento. Substitui o MinIO, cuja imagem
+  # saiu do Docker Hub. Com as variáveis AWS_* o S3 exige essa chave, como o R2
+  # em produção; a API usa as mesmas em STORAGE_ACCESS_KEY_ID/SECRET_ACCESS_KEY.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
+    container_name: incident_tracker_seaweedfs
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minio123
-    command: server /data --console-address ":9001"
+      AWS_ACCESS_KEY_ID: incident
+      AWS_SECRET_ACCESS_KEY: incident-dev-storage
+    command: server -dir=/data -s3 -s3.port=8333
     ports:
-      - "127.0.0.1:9003:9000"
-      - "127.0.0.1:9004:9001"
+      - "127.0.0.1:9003:8333"
     volumes:
-      - minio_data:/data
+      - seaweedfs_data:/data
 
 volumes:
   mysql_data:
   redis_data:
-  minio_data:
+  seaweedfs_data:
