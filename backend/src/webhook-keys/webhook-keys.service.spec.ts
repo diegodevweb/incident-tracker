@@ -16,7 +16,7 @@ type StoredKey = {
   createdAt: Date;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
-  client: { role: UserRole };
+  client: { role: UserRole; disabledAt: Date | null };
 };
 
 describe('WebhookKeysService', () => {
@@ -45,7 +45,7 @@ describe('WebhookKeysService', () => {
     createdAt: new Date('2026-10-01T00:00:00Z'),
     lastUsedAt: null,
     revokedAt: null,
-    client: { role: UserRole.CLIENT },
+    client: { role: UserRole.CLIENT, disabledAt: null },
     ...overrides,
   });
 
@@ -131,7 +131,18 @@ describe('WebhookKeysService', () => {
     it('rejects a key whose owner is no longer a client', async () => {
       const { key } = generateWebhookKey();
       prisma.webhookKey.findUnique.mockResolvedValue(
-        storedFor(key, { client: { role: UserRole.ADMIN } }),
+        storedFor(key, { client: { role: UserRole.ADMIN, disabledAt: null } }),
+      );
+
+      await expect(service.authenticate(key)).resolves.toBeNull();
+    });
+
+    it('rejects a key of a disabled client', async () => {
+      const { key } = generateWebhookKey();
+      prisma.webhookKey.findUnique.mockResolvedValue(
+        storedFor(key, {
+          client: { role: UserRole.CLIENT, disabledAt: new Date() },
+        }),
       );
 
       await expect(service.authenticate(key)).resolves.toBeNull();

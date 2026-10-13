@@ -1,10 +1,8 @@
 import type {
-  ClientAccount,
   DashboardSummary,
   Incident,
   MonthlyReport,
   SlaRule,
-  UserProfile,
 } from "./types";
 
 export const mockIncidents: Incident[] = [
@@ -405,61 +403,3 @@ export const monthlyReport: MonthlyReport = {
     },
   ],
 };
-
-export const mockProfiles: Record<"ADMIN" | "CLIENT", UserProfile> = {
-  ADMIN: {
-    id: 1,
-    role: "ADMIN",
-    fullName: "Diego Rodrigues",
-    email: "diego.devwebb@gmail.com",
-    phone: "(11) 99876-2211",
-    companyName: "Webb Tecnologia",
-    document: "12.345.678/0001-55",
-    plan: "Operação avançada",
-    preferredContact: "E-mail",
-  },
-  CLIENT: {
-    id: 2,
-    role: "CLIENT",
-    fullName: "Marcos Vieira",
-    email: "marcos.vieira@atacadodelta.com.br",
-    phone: "(31) 98888-1122",
-    companyName: "Atacado Delta",
-    document: "44.555.666/0001-90",
-    plan: "Suporte monitorado",
-    preferredContact: "WhatsApp + e-mail",
-  },
-};
-
-export const mockClients: ClientAccount[] = [
-  {
-    id: 101,
-    companyName: "Atacado Delta",
-    contactName: "Marcos Vieira",
-    email: "marcos.vieira@atacadodelta.com.br",
-    phone: "(31) 98888-1122",
-    environment: "production",
-    activeIncidents: 1,
-    slaPlan: "Crítico 2h / Alta 4h",
-  },
-  {
-    id: 102,
-    companyName: "Clube Sigma",
-    contactName: "Fernanda Costa",
-    email: "fernanda.costa@clubesigma.com",
-    phone: "(21) 97777-4433",
-    environment: "production",
-    activeIncidents: 1,
-    slaPlan: "Operação contínua",
-  },
-  {
-    id: 103,
-    companyName: "Laboratório Aurora",
-    contactName: "Bianca Souza",
-    email: "bianca.souza@aurora.lab",
-    phone: "(41) 96666-7788",
-    environment: "staging",
-    activeIncidents: 0,
-    slaPlan: "Monitoramento homologação",
-  },
-];

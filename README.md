@@ -124,6 +124,20 @@ Each client gets its own keys. Only a SHA-256 hash is stored; the full key is sh
 * **GET** `/clients/:clientId/webhook-keys`: lists the keys (prefix, name, creation, last use, revocation), never the key itself
 * **DELETE** `/clients/:clientId/webhook-keys/:keyId`: revokes the key
 
+Keys of a disabled client stop working until the client is enabled again.
+
+### Accounts
+
+Admins manage client accounts on the **Clientes** page (or the API below). There is no self sign-up, and admins are not created through the panel.
+
+* **POST** `/clients` with `{ "name", "email" }`: creates a client with a random temporary password, returned once in `temporaryPassword`
+* **GET** `/clients?page=&pageSize=&q=`: lists clients (name, e-mail, status, open incidents)
+* **PATCH** `/clients/:id`: changes name or e-mail
+* **POST** `/clients/:id/password-reset`: issues a new temporary password and ends the client's sessions
+* **POST** `/clients/:id/disable` and `/clients/:id/enable`: a disabled client cannot log in, loses its sessions and its webhook keys stop working. Clients are disabled, never deleted
+
+With a temporary password, the only things a user can do are read `GET /account`, change the password at `POST /account/password` (current and new password; the new one follows `src/auth/password-policy.ts`) and log out. Changing the password ends the user's other sessions. `PATCH /account` changes the user's own name.
+
 ---
 
 ## Running Locally

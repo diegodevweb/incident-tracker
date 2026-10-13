@@ -51,17 +51,23 @@ enum IncidentEventType {
 }
 
 model User {
-  id             Int             @id @default(autoincrement())
-  name           String
-  email          String          @unique
-  password       String
-  role           UserRole        @default(CLIENT)
-  tokenVersion   Int             @default(0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  incidents      Incident[]
-  incidentEvents IncidentEvent[]
-  webhookKeys    WebhookKey[]
+  id                 Int             @id @default(autoincrement())
+  name               String
+  email              String          @unique
+  password           String
+  role               UserRole        @default(CLIENT)
+  tokenVersion       Int             @default(0)
+  /// Senha temporária (criada ou redefinida pelo admin): só dá para usar o
+  /// painel depois de trocá-la.
+  mustChangePassword Boolean         @default(false)
+  /// Conta desativada: não entra, perde as sessões e as chaves de webhook.
+  /// Desativa-se em vez de apagar, porque eventos e chamados apontam para ela.
+  disabledAt         DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  incidents          Incident[]
+  incidentEvents     IncidentEvent[]
+  webhookKeys        WebhookKey[]
 }
 
 model Incident {

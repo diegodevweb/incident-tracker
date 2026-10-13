@@ -52,13 +52,14 @@ export class WebhookKeysService {
 
     const stored = await this.prisma.webhookKey.findUnique({
       where: { prefix },
-      include: { client: { select: { role: true } } },
+      include: { client: { select: { role: true, disabledAt: true } } },
     });
 
     if (
       !stored ||
       stored.revokedAt ||
       stored.client.role !== UserRole.CLIENT ||
+      stored.client.disabledAt ||
       !this.hashMatches(stored.keyHash, presentedKey)
     ) {
       return null;
