@@ -128,7 +128,7 @@ Keys of a disabled company stop working until the company is enabled again.
 
 ### Client companies and accounts
 
-A client is a company with any number of users. Every user of a company sees all of its incidents (opened by any of them or by the webhook), and each incident shows who opened it. Admins manage companies and their users on the **Clientes** page (or the API below). There is no self sign-up, and admins are not created through the panel.
+A client is a company with any number of users. Every user of a company sees all of its incidents (opened by any of them or by the webhook), and each incident shows who opened it. Admins manage companies and their users on the **Clientes** page (or the API below). There is no self sign-up, and admins are not created through the panel (see [Creating admins](#creating-admins)).
 
 * **POST** `/companies` with `{ "name", "cnpj"? }`: creates a company. The CNPJ is optional, unique, accepted with or without punctuation and validated by its check digits, numeric or alphanumeric
 * **GET** `/companies?page=&pageSize=&q=&status=active|disabled`: lists companies (search by name or CNPJ) with their user count and open incidents
@@ -142,6 +142,21 @@ A client is a company with any number of users. Every user of a company sees all
 An admin opening an incident must send `companyId`; a client user always opens it in their own company.
 
 With a temporary password, the only things a user can do are read `GET /account`, change the password at `POST /account/password` (current and new password; the new one follows `src/auth/password-policy.ts`) and log out. Changing the password ends the user's other sessions. `PATCH /account` changes the user's own name.
+
+### Creating admins
+
+The panel only creates client users, and the development seed never runs with `NODE_ENV=production`, so a new production database has no users at all. Admins, the first one included, are created with a command that talks straight to the database (`DATABASE_URL` is required) and runs from the built code:
+
+```bash
+node dist/cli/run-create-admin --name "Your Name" --email you@company.com
+```
+
+During development, after `npm run build`, the same thing is `npm run create-admin -- --name ... --email ...`.
+
+* The password is asked in the terminal (hidden, twice) and must follow `src/auth/password-policy.ts`. Without a terminal, such as in a deploy script, set `CREATE_ADMIN_PASSWORD` in the environment of that one command and do not save it in `.env`. `--password` is refused on purpose, so the password never ends up in the shell history or the process list
+* Missing `--name` or `--email` are asked in the terminal too
+* The admin chooses the password, so there is no forced change at the first login
+* An e-mail that already exists is refused and the existing user is left untouched
 
 ### Health check
 
