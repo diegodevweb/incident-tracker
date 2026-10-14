@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Um push novo no mesmo PR cancela a execução anterior.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24
+
+jobs:
+  backend:
+    name: Backend (lint, tipos, testes, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Lint
+        run: npx eslint "{src,apps,libs,test}/**/*.ts"
+      - name: Tipos (inclui testes)
+        run: npx tsc --noEmit
+      - name: Testes de unidade
+        run: npx jest
+      - run: npm run build
+
+  backend-e2e:
+    name: Backend e2e (MySQL + S3 reais)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          # Banco descartável do job, só acessível no runner.
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: incident_tracker_e2e
+        ports:
+          - 127.0.0.1:3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    env:
+      DATABASE_URL: mysql://root@127.0.0.1:3306/incident_tracker_e2e
+      STORAGE_REGION: us-east-1
+      STORAGE_BUCKET: incident-tracker-e2e
+      STORAGE_ENDPOINT: http://127.0.0.1:8333
+      STORAGE_FORCE_PATH_STYLE: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Segredos descartáveis
+        run: |
+          {
+            echo "JWT_SECRET=$(openssl rand -base64 48)"
+            echo "STORAGE_ACCESS_KEY_ID=ci-$(openssl rand -hex 8)"
+            echo "STORAGE_SECRET_ACCESS_KEY=$(openssl rand -hex 24)"
+          } >> "$GITHUB_ENV"
+      # Mesma imagem e comando do docker-compose. Fica fora de "services"
+      # porque o serviço não aceita o comando do container.
+      - name: S3 (SeaweedFS)
+        run: |
+          docker run -d --name seaweedfs -p 127.0.0.1:8333:8333 \
+            -e AWS_ACCESS_KEY_ID="$STORAGE_ACCESS_KEY_ID" \
+            -e AWS_SECRET_ACCESS_KEY="$STORAGE_SECRET_ACCESS_KEY" \
+            chrislusf/seaweedfs:4.48 server -dir=/data -s3 -s3.port=8333
+          for i in $(seq 60); do
+            curl -s -o /dev/null http://127.0.0.1:8333 && exit 0
+            sleep 1
+          done
+          docker logs seaweedfs
+          exit 1
+      - name: Migrations do zero
+        run: npx prisma migrate deploy
+      - name: Schema e migrations batem
+        run: >-
+          npx prisma migrate diff
+          --from-url "$DATABASE_URL"
+          --to-schema-datamodel prisma/schema.prisma
+          --exit-code
+      - name: Testes e2e
+        run: npm run test:e2e
+
+  frontend:
+    name: Frontend (lint, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

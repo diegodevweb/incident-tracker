@@ -16,7 +16,7 @@ import {
 } from './storage.types';
 
 @Injectable()
-export class S3StorageService extends StorageService {
+export class S3StorageService extends StorageService implements OnModuleInit {
   private readonly client: S3Client;
 
   constructor(private readonly storageConfig: StorageConfig) {
