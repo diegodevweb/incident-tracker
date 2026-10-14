@@ -14,19 +14,25 @@ const admin: JwtPayload = {
   sub: 1,
   email: 'admin@example.com',
   role: UserRole.ADMIN,
+  companyId: null,
 };
 const client: JwtPayload = {
   sub: 2,
   email: 'cliente@example.com',
   role: UserRole.CLIENT,
+  companyId: 2,
 };
 
-const PUBLIC_CLIENT = { select: { id: true, name: true, email: true } };
+// Empresa e autor só com id e nome: nunca a linha inteira do usuário (hash da
+// senha) nem o e-mail de quem abriu (pode ser um admin).
+const PUBLIC_COMPANY = { select: { id: true, name: true } };
+const PUBLIC_USER = { select: { id: true, name: true } };
 
 type QueryArg = {
   where?: Record<string, unknown>;
   include: {
-    client?: unknown;
+    company?: unknown;
+    createdBy?: unknown;
     logs?: { take?: number };
     attachments?: unknown;
   };
@@ -36,7 +42,7 @@ type QueryArg = {
 };
 type Call = [QueryArg];
 
-describe('IncidentsService pagination, report limits and client exposure', () => {
+describe('IncidentsService pagination, report limits and user exposure', () => {
   let prisma: {
     incident: {
       findMany: jest.Mock;
@@ -48,6 +54,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
     };
     incidentLog: { findMany: jest.Mock; findFirst: jest.Mock };
     preventiveAction: { findMany: jest.Mock };
+    company: { findUnique: jest.Mock };
   };
   let storage: {
     uploadObject: jest.Mock;
@@ -58,7 +65,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
 
   const incidentRow = (overrides: Record<string, unknown> = {}) => ({
     id: 10,
-    clientId: 2,
+    companyId: 2,
     title: 'Erro',
     description: 'Descrição',
     correctiveActions: null,
@@ -67,7 +74,8 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
     source: IncidentSource.DASHBOARD,
     createdAt: new Date('2026-10-05T12:00:00Z'),
     updatedAt: new Date('2026-10-06T12:00:00Z'),
-    client: { id: 2, name: 'Cliente', email: 'cliente@example.com' },
+    company: { id: 2, name: 'Cliente' },
+    createdBy: { id: 2, name: 'Cliente' },
     attachments: [],
     logs: [],
     events: [],
@@ -89,6 +97,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
         findFirst: jest.fn().mockResolvedValue(null),
       },
       preventiveAction: { findMany: jest.fn().mockResolvedValue([]) },
+      company: { findUnique: jest.fn().mockResolvedValue({ id: 2 }) },
     };
     storage = {
       uploadObject: jest.fn(),
@@ -171,14 +180,14 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
       expect(result.summary.bySource).toEqual({ WEBHOOK: 30, DASHBOARD: 0 });
     });
 
-    it('applies the same filter and client scope to the list, the count and the summary', async () => {
+    it('applies the same filter and company scope to the list, the count and the summary', async () => {
       await service.getIncidents(
-        { status: IncidentStatus.OPEN, clientId: 99 },
+        { status: IncidentStatus.OPEN, companyId: 99 },
         client,
       );
 
       const listWhere = firstCall(prisma.incident.findMany).where;
-      expect(listWhere).toMatchObject({ status: 'OPEN', clientId: client.sub });
+      expect(listWhere).toMatchObject({ status: 'OPEN', companyId: 2 });
       expect(firstCall(prisma.incident.count).where).toEqual(listWhere);
       (prisma.incident.groupBy.mock.calls as Call[]).forEach(([args]) => {
         expect(args.where).toEqual(listWhere);
@@ -186,7 +195,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
     });
   });
 
-  describe('client data in responses', () => {
+  describe('company and author data in responses', () => {
     const operations: [string, () => Promise<unknown>, () => jest.Mock][] = [
       [
         'list',
@@ -203,7 +212,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
         () =>
           service.createIncident(
             {
-              clientId: 2,
+              companyId: 2,
               title: 't',
               description: 'd',
               environment: 'production',
@@ -228,7 +237,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
               message: 'm',
               environment: 'production',
             },
-            { id: 1, clientId: 2 },
+            { id: 1, companyId: 2 },
           ),
         () => prisma.incident.create,
       ],
@@ -247,13 +256,17 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
     ];
 
     it.each(operations)(
-      'selects only id, name and email of the client in the %s (never the password hash)',
+      'selects only id and name of the company and the author in the %s',
       async (_name, run, mock) => {
         await run();
 
         const calls = mock().mock.calls as Call[];
         const include = calls[calls.length - 1][0].include;
-        expect(include.client).toEqual(PUBLIC_CLIENT);
+        expect(include.company).toEqual(PUBLIC_COMPANY);
+        // O relatório e o webhook não trazem o autor; quem traz, só id e nome.
+        if (include.createdBy !== undefined) {
+          expect(include.createdBy).toEqual(PUBLIC_USER);
+        }
       },
     );
   });
@@ -322,7 +335,7 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
   });
 
   describe('POST /incidents/error-logs', () => {
-    it('takes the client from the webhook key and fixes origin and status', async () => {
+    it('takes the company from the webhook key and fixes origin and status', async () => {
       await service.createErrorLog(
         {
           title: 't',
@@ -330,12 +343,12 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
           message: 'm',
           environment: 'production',
         },
-        { id: 1, clientId: 2 },
+        { id: 1, companyId: 2 },
       );
 
       expect(firstCall(prisma.incident.create)).toMatchObject({
         data: {
-          clientId: 2,
+          companyId: 2,
           source: IncidentSource.WEBHOOK,
           status: IncidentStatus.OPEN,
         },
@@ -362,28 +375,28 @@ describe('IncidentsService pagination, report limits and client exposure', () =>
       });
     });
 
-    it("only lists the logs of the webhook key's client", async () => {
+    it("only lists the logs of the webhook key's company", async () => {
       await service.getErrorLogs({}, 2);
 
       expect(firstCall(prisma.incidentLog.findMany).where).toEqual({
-        incident: { clientId: 2 },
+        incident: { companyId: 2 },
       });
     });
   });
 
   describe('GET /incidents/error-log/:id', () => {
-    it("looks the log up within the webhook key's client", async () => {
+    it("looks the log up within the webhook key's company", async () => {
       prisma.incidentLog.findFirst.mockResolvedValue({ id: 7 });
 
       await service.getErrorLog(7, 2);
 
       expect(firstCall(prisma.incidentLog.findFirst).where).toEqual({
         id: 7,
-        incident: { clientId: 2 },
+        incident: { companyId: 2 },
       });
     });
 
-    it("answers 404 for another client's log", async () => {
+    it("answers 404 for another company's log", async () => {
       await expect(service.getErrorLog(7, 3)).rejects.toThrow(
         NotFoundException,
       );

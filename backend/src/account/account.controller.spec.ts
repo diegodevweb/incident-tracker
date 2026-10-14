@@ -35,6 +35,7 @@ describe('AccountController', () => {
     tokenVersion: 0,
     mustChangePassword: false,
     disabledAt: null as Date | null,
+    companyId: 7,
   };
   let current = { ...dbUser };
 

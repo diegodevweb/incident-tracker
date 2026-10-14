@@ -25,6 +25,10 @@ describe('AuthService', () => {
     tokenVersion: 3,
     mustChangePassword: false,
     disabledAt: null as Date | null,
+    companyId: 5 as number | null,
+    company: { disabledAt: null as Date | null } as {
+      disabledAt: Date | null;
+    } | null,
   };
 
   let prisma: {
@@ -90,6 +94,36 @@ describe('AuthService', () => {
       ).rejects.toThrow(ForbiddenException);
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(rateLimit.registerFailure).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['its company is disabled', { company: { disabledAt: new Date() } }],
+      ['a client has no company', { companyId: null, company: null }],
+    ])(
+      'refuses the login when %s, after the password matches',
+      async (_, changes) => {
+        compare.mockResolvedValue(true);
+        prisma.user.findUnique.mockResolvedValue({ ...user, ...changes });
+
+        await expect(
+          service.login({ email: user.email, password: typedPassword }, ip),
+        ).rejects.toThrow(ForbiddenException);
+        expect(jwtService.signAsync).not.toHaveBeenCalled();
+      },
+    );
+
+    it('lets an admin without a company in', async () => {
+      compare.mockResolvedValue(true);
+      prisma.user.findUnique.mockResolvedValue({
+        ...user,
+        role: UserRole.ADMIN,
+        companyId: null,
+        company: null,
+      });
+
+      await expect(
+        service.login({ email: user.email, password: typedPassword }, ip),
+      ).resolves.toMatchObject({ accessToken: 'signed-token' });
     });
 
     it('answers a disabled account with a wrong password like any failure', async () => {

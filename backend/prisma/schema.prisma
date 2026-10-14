@@ -60,14 +60,36 @@ model User {
   /// Senha temporária (criada ou redefinida pelo admin): só dá para usar o
   /// painel depois de trocá-la.
   mustChangePassword Boolean         @default(false)
-  /// Conta desativada: não entra, perde as sessões e as chaves de webhook.
-  /// Desativa-se em vez de apagar, porque eventos e chamados apontam para ela.
+  /// Conta desativada: não entra e perde as sessões. Desativa-se em vez de
+  /// apagar, porque eventos e chamados apontam para ela.
   disabledAt         DateTime?
+  /// Empresa do usuário CLIENT (obrigatória para ele); nula para ADMIN.
+  companyId          Int?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
-  incidents          Incident[]
-  incidentEvents     IncidentEvent[]
-  webhookKeys        WebhookKey[]
+
+  company          Company?        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdIncidents Incident[]      @relation("IncidentCreatedBy")
+  incidentEvents   IncidentEvent[]
+
+  @@index([companyId])
+}
+
+/// Empresa cliente: agrupa os usuários CLIENT, os chamados e as chaves de
+/// webhook. Não é apagada, é desativada.
+model Company {
+  id         Int       @id @default(autoincrement())
+  name       String
+  /// 14 caracteres sem pontuação (numérico ou alfanumérico); único quando informado.
+  cnpj       String?   @unique @db.Char(14)
+  /// Empresa desativada: nenhum usuário dela entra e as chaves de webhook param.
+  disabledAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  users       User[]
+  incidents   Incident[]
+  webhookKeys WebhookKey[]
 }
 
 model Incident {
@@ -79,10 +101,14 @@ model Incident {
   priority          IncidentLevel  @default(INFO)
   source            IncidentSource @default(DASHBOARD)
   environment       String
-  clientId          Int
-  client            User           @relation(fields: [clientId], references: [id])
+  companyId         Int
+  /// Quem abriu pelo painel; nulo quando veio do webhook ou é anterior ao registro de autoria.
+  createdById       Int?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User?   @relation("IncidentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   attachments       IncidentAttachment[]
   logs              IncidentLog[]
@@ -142,11 +168,11 @@ model IncidentEvent {
   @@index([incidentId, createdAt])
 }
 
-/// Chave de webhook de um cliente. Só o hash SHA-256 da chave é guardado; o
+/// Chave de webhook de uma empresa. Só o hash SHA-256 da chave é guardado; o
 /// prefixo é público e serve para achar a chave e identificá-la nas listagens.
 model WebhookKey {
   id         Int       @id @default(autoincrement())
-  clientId   Int
+  companyId  Int
   name       String
   prefix     String    @unique
   keyHash    String    @db.Char(64)
@@ -155,8 +181,7 @@ model WebhookKey {
   /// Revogar não apaga a linha: o histórico de quais chaves existiram fica.
   revokedAt  DateTime?
 
-  /// Restrict: um cliente com chaves não pode ser apagado (desativar no F2).
-  client User @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
-  @@index([clientId])
+  @@index([companyId])
 }

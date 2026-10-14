@@ -1,5 +1,4 @@
 import { NotFoundException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   WebhookKeysService,
@@ -9,14 +8,14 @@ import {
 
 type StoredKey = {
   id: number;
-  clientId: number;
+  companyId: number;
   name: string;
   prefix: string;
   keyHash: string;
   createdAt: Date;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
-  client: { role: UserRole; disabledAt: Date | null };
+  company: { disabledAt: Date | null };
 };
 
 describe('WebhookKeysService', () => {
@@ -28,7 +27,7 @@ describe('WebhookKeysService', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
-    user: { findUnique: jest.Mock };
+    company: { findUnique: jest.Mock };
   };
   let service: WebhookKeysService;
 
@@ -38,14 +37,14 @@ describe('WebhookKeysService', () => {
     overrides: Partial<StoredKey> = {},
   ): StoredKey => ({
     id: 7,
-    clientId: 2,
+    companyId: 2,
     name: 'ERP',
     prefix: key.split('_')[1],
     keyHash: hashWebhookKey(key),
     createdAt: new Date('2026-10-01T00:00:00Z'),
     lastUsedAt: null,
     revokedAt: null,
-    client: { role: UserRole.CLIENT, disabledAt: null },
+    company: { disabledAt: null },
     ...overrides,
   });
 
@@ -60,8 +59,8 @@ describe('WebhookKeysService', () => {
         ),
         update: jest.fn().mockResolvedValue({}),
       },
-      user: {
-        findUnique: jest.fn().mockResolvedValue({ role: UserRole.CLIENT }),
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ id: 2 }),
       },
     };
     service = new WebhookKeysService(prisma as unknown as PrismaService);
@@ -80,13 +79,13 @@ describe('WebhookKeysService', () => {
   });
 
   describe('authenticate', () => {
-    it('accepts a valid key and returns its client', async () => {
+    it('accepts a valid key and returns its company', async () => {
       const { key } = generateWebhookKey();
       prisma.webhookKey.findUnique.mockResolvedValue(storedFor(key));
 
       await expect(service.authenticate(key)).resolves.toEqual({
         id: 7,
-        clientId: 2,
+        companyId: 2,
       });
       expect(prisma.webhookKey.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { prefix: key.split('_')[1] } }),
@@ -128,21 +127,10 @@ describe('WebhookKeysService', () => {
       await expect(service.authenticate(key)).resolves.toBeNull();
     });
 
-    it('rejects a key whose owner is no longer a client', async () => {
+    it('rejects a key of a disabled company', async () => {
       const { key } = generateWebhookKey();
       prisma.webhookKey.findUnique.mockResolvedValue(
-        storedFor(key, { client: { role: UserRole.ADMIN, disabledAt: null } }),
-      );
-
-      await expect(service.authenticate(key)).resolves.toBeNull();
-    });
-
-    it('rejects a key of a disabled client', async () => {
-      const { key } = generateWebhookKey();
-      prisma.webhookKey.findUnique.mockResolvedValue(
-        storedFor(key, {
-          client: { role: UserRole.CLIENT, disabledAt: new Date() },
-        }),
+        storedFor(key, { company: { disabledAt: new Date() } }),
       );
 
       await expect(service.authenticate(key)).resolves.toBeNull();
@@ -184,7 +172,7 @@ describe('WebhookKeysService', () => {
       )[0];
 
       expect(data.data).toEqual({
-        clientId: 2,
+        companyId: 2,
         name: 'ERP produção',
         prefix: created.prefix,
         keyHash: hashWebhookKey(created.key),
@@ -202,23 +190,21 @@ describe('WebhookKeysService', () => {
 
       await expect(service.authenticate(created.key)).resolves.toEqual({
         id: 7,
-        clientId: 2,
+        companyId: 2,
       });
     });
 
-    it.each([
-      ['an unknown user', null],
-      ['an admin', { role: UserRole.ADMIN }],
-    ])('refuses to create a key for %s', async (_, user) => {
-      prisma.user.findUnique.mockResolvedValue(user);
+    it('refuses to create a key for an unknown company', async () => {
+      prisma.company.findUnique.mockResolvedValue(null);
 
       await expect(service.create(1, 'ERP')).rejects.toThrow(NotFoundException);
+      await expect(service.list(1)).rejects.toThrow(NotFoundException);
       expect(prisma.webhookKey.create).not.toHaveBeenCalled();
     });
   });
 
   describe('list', () => {
-    it("lists the client's keys without the hash", async () => {
+    it("lists the company's keys without the hash", async () => {
       await service.list(2);
 
       const args = (
@@ -226,7 +212,7 @@ describe('WebhookKeysService', () => {
           { where: unknown; select: Record<string, boolean> },
         ]
       )[0];
-      expect(args.where).toEqual({ clientId: 2 });
+      expect(args.where).toEqual({ companyId: 2 });
       expect(args.select).not.toHaveProperty('keyHash');
     });
   });
@@ -238,7 +224,7 @@ describe('WebhookKeysService', () => {
       await service.revoke(2, 7);
 
       expect(prisma.webhookKey.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 7, clientId: 2 } }),
+        expect.objectContaining({ where: { id: 7, companyId: 2 } }),
       );
       expect(prisma.webhookKey.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -256,7 +242,7 @@ describe('WebhookKeysService', () => {
       expect(prisma.webhookKey.update).not.toHaveBeenCalled();
     });
 
-    it("answers 404 for another client's key", async () => {
+    it("answers 404 for another company's key", async () => {
       await expect(service.revoke(3, 7)).rejects.toThrow(NotFoundException);
       expect(prisma.webhookKey.update).not.toHaveBeenCalled();
     });

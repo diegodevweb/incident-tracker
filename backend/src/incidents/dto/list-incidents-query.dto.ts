@@ -45,16 +45,17 @@ export class ListIncidentsQueryDto {
   @MaxLength(MAX_VARCHAR_LENGTH)
   environment?: string;
 
+  /** Parte do nome da empresa (só o admin; o cliente já vê só a dele). */
   @IsOptional()
   @IsString()
   @MaxLength(MAX_VARCHAR_LENGTH)
-  client?: string;
+  company?: string;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  clientId?: number;
+  companyId?: number;
 
   @IsOptional()
   @IsDateString()

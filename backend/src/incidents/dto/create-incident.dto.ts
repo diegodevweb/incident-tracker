@@ -12,11 +12,12 @@ import { IncidentLevel, IncidentStatus } from '@prisma/client';
 import { MAX_VARCHAR_LENGTH } from '../limits';
 
 export class CreateIncidentDto {
+  /** Só o admin informa (obrigatório para ele); o cliente abre na própria empresa. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  clientId!: number;
+  companyId?: number;
 
   @IsString()
   @IsNotEmpty()

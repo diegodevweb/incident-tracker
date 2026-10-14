@@ -10,7 +10,7 @@ import {
 import { IncidentLevel } from '@prisma/client';
 import { MAX_VARCHAR_LENGTH } from '../limits';
 
-// Sem clientId, source e status: o cliente sai da chave do webhook e o
+// Sem empresa, source e status: a empresa sai da chave do webhook e o
 // chamado sempre nasce aberto e com origem WEBHOOK. Mandar esses campos dá 400.
 export class CreateErrorLogDto {
   @IsString()

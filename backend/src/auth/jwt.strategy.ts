@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { isBlockedAccount } from './blocked-account';
 import { getJwtSecret } from './jwt-secret';
 import { JwtPayload, JwtTokenPayload } from './jwt-payload.interface';
 
@@ -20,9 +21,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   /**
-   * O papel vem do banco, não do token: usuário removido, desativado ou
-   * rebaixado perde o acesso na hora, e o logout (que muda tokenVersion)
-   * invalida o token.
+   * Papel e empresa vêm do banco, não do token: usuário removido, desativado,
+   * rebaixado ou de empresa desativada perde o acesso na hora, e o logout (que
+   * muda tokenVersion) invalida o token.
    */
   async validate(payload: JwtTokenPayload): Promise<JwtPayload> {
     if (typeof payload.sub !== 'number') {
@@ -38,10 +39,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         tokenVersion: true,
         mustChangePassword: true,
         disabledAt: true,
+        companyId: true,
+        company: { select: { disabledAt: true } },
       },
     });
 
-    if (!user || user.disabledAt || user.tokenVersion !== payload.tv) {
+    if (!user || user.tokenVersion !== payload.tv || isBlockedAccount(user)) {
       throw new UnauthorizedException();
     }
 
@@ -50,6 +53,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: user.email,
       role: user.role,
       mustChangePassword: user.mustChangePassword,
+      companyId: user.companyId,
     };
   }
 }
