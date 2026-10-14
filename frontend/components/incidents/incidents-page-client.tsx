@@ -28,7 +28,7 @@ type IncidentsPageClientProps = {
     q?: string;
     status?: string;
     source?: string;
-    client?: string;
+    company?: string;
     page?: string;
   };
 };
@@ -48,7 +48,7 @@ function resolvePage(value?: string) {
 }
 
 export function IncidentsPageClient({
-  initialSearchParams: { filter, q, status, source, client, page: pageParam },
+  initialSearchParams: { filter, q, status, source, company, page: pageParam },
 }: IncidentsPageClientProps) {
   const router = useRouter();
   const session = useAuthSession();
@@ -58,16 +58,8 @@ export function IncidentsPageClient({
   const activeFilter = resolveFilter(filter);
   const page = resolvePage(pageParam);
   const activeRole = session?.user.role ?? "CLIENT";
-  const authenticatedClientId =
-    session?.user.role === "CLIENT"
-      ? session.user.clientId ?? session.user.id
-      : undefined;
   const displayName = session?.user.name ?? "Usuário";
   const userInitials = getInitials(displayName);
-  const authError =
-    activeRole === "CLIENT" && !authenticatedClientId
-      ? "Faça login novamente para carregar seus tickets."
-      : null;
 
   useEffect(() => {
     if (!session) {
@@ -80,17 +72,11 @@ export function IncidentsPageClient({
       return;
     }
 
-    if (authError) {
-      return;
-    }
-
+    // O cliente vê todos os chamados da empresa dele (a API já restringe),
+    // abertos por qualquer pessoa da equipe ou pela integração.
     const apiQuery =
       activeRole === "CLIENT"
-        ? {
-            clientId: authenticatedClientId,
-            source: "DASHBOARD",
-            page,
-          }
+        ? { page }
         : {
             q,
             status,
@@ -101,7 +87,7 @@ export function IncidentsPageClient({
                   ? "DASHBOARD"
                   : source,
             environment: activeFilter === "PRODUCTION" ? "production" : undefined,
-            client,
+            company,
             page,
           };
 
@@ -117,9 +103,7 @@ export function IncidentsPageClient({
   }, [
     activeFilter,
     activeRole,
-    authError,
-    authenticatedClientId,
-    client,
+    company,
     page,
     q,
     session,
@@ -137,7 +121,7 @@ export function IncidentsPageClient({
   const summaryCards =
     activeRole === "CLIENT"
       ? [
-          { label: "Meus tickets", value: total },
+          { label: "Tickets da empresa", value: total },
           { label: "Em aberto", value: byStatus?.OPEN ?? 0 },
           { label: "Em andamento", value: byStatus?.IN_PROGRESS ?? 0 },
           { label: "Resolvidos", value: byStatus?.RESOLVED ?? 0 },
@@ -154,16 +138,16 @@ export function IncidentsPageClient({
     q,
     status,
     source,
-    client,
+    company,
   };
 
   return (
     <div>
       <Topbar
-        title={activeRole === "CLIENT" ? "Meus tickets" : "Alertas"}
+        title={activeRole === "CLIENT" ? "Tickets da empresa" : "Alertas"}
         subtitle={
           activeRole === "CLIENT"
-            ? "Acompanhe seus tickets e atualizações."
+            ? "Os tickets da sua empresa, abertos por qualquer pessoa da equipe ou pela integração."
             : "Leitura consolidada de eventos operacionais e erros capturados na integração."
         }
         userInitials={userInitials}
@@ -194,7 +178,7 @@ export function IncidentsPageClient({
                 if (q) params.set("q", q);
                 if (status) params.set("status", status);
                 if (source) params.set("source", source);
-                if (client) params.set("client", client);
+                if (company) params.set("company", company);
 
                 return (
                   <Link
@@ -216,8 +200,8 @@ export function IncidentsPageClient({
           </div>
         )}
 
-        {authError || loadError ? (
-          <div className="alert alert-error text-sm">{authError ?? loadError}</div>
+        {loadError ? (
+          <div className="alert alert-error text-sm">{loadError}</div>
         ) : null}
 
         <IncidentList incidents={incidents} />

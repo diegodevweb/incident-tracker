@@ -8,7 +8,7 @@ export default async function IncidentsPage({
     q?: string;
     status?: string;
     source?: string;
-    client?: string;
+    company?: string;
     page?: string;
   }>;
 }) {

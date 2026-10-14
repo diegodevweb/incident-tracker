@@ -52,7 +52,9 @@ export type Incident = {
   priority: IncidentLevel;
   source: IncidentSource;
   environment: IncidentEnvironment;
-  clientName: string;
+  companyName: string;
+  /** Quem abriu pelo painel; null quando veio do webhook ou é anterior ao registro. */
+  createdByName: string | null;
   createdAt: string;
   logs: IncidentLog[];
   attachments: IncidentAttachment[];
@@ -74,6 +76,8 @@ export type AccountProfile = {
   role: UserRole;
   mustChangePassword: boolean;
   createdAt: string;
+  /** Empresa do usuário cliente; null para admin. */
+  company: { id: number; name: string; cnpj: string | null } | null;
 };
 
 export type AuthenticatedUser = {
@@ -81,7 +85,6 @@ export type AuthenticatedUser = {
   name: string;
   email: string;
   role: UserRole;
-  clientId?: number | null;
   /** Senha temporária: o painel só libera a troca de senha. */
   mustChangePassword?: boolean;
 };
@@ -90,22 +93,44 @@ export type AuthSession = {
   user: AuthenticatedUser;
 };
 
-/** Cliente como o admin vê (GET /clients). */
-export type ClientAccount = {
+/** Empresa cliente como o admin vê (GET /companies). */
+export type Company = {
+  id: number;
+  name: string;
+  /** 14 caracteres sem pontuação; ver formatCnpj. */
+  cnpj: string | null;
+  disabledAt: string | null;
+  createdAt: string;
+  userCount: number;
+  openIncidents: number;
+};
+
+export type CompanyListPage = {
+  items: Company[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** Usuário de uma empresa cliente (GET /companies/:id/users). */
+export type CompanyUser = {
   id: number;
   name: string;
   email: string;
   createdAt: string;
   disabledAt: string | null;
   mustChangePassword: boolean;
-  openIncidents: number;
 };
 
-export type ClientListPage = {
-  items: ClientAccount[];
-  total: number;
-  page: number;
-  pageSize: number;
+/** Chave de webhook de uma empresa; a chave inteira só vem na criação. */
+export type WebhookKey = {
+  id: number;
+  companyId: number;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
 };
 
 export type SlaRule = {
@@ -131,7 +156,7 @@ export type MonthlyReportEntry = {
   priority: IncidentLevel;
   description: string;
   status?: IncidentStatus;
-  clientName?: string;
+  companyName?: string;
   latestLogMessage?: string | null;
 };
 

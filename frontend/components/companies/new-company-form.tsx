@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createClient } from "@/lib/api";
-import type { ClientAccount } from "@/lib/types";
+import { createCompany } from "@/lib/api";
+import type { Company } from "@/lib/types";
 
-export function NewClientForm({
+export function NewCompanyForm({
   onCreated,
 }: {
-  onCreated: (client: ClientAccount, temporaryPassword: string) => void;
+  onCreated: (company: Company) => void;
 }) {
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [cnpj, setCnpj] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -20,15 +20,12 @@ export function NewClientForm({
 
     startTransition(async () => {
       try {
-        const { client, temporaryPassword } = await createClient({ name, email });
-        setName("");
-        setEmail("");
-        onCreated(client, temporaryPassword);
+        onCreated(await createCompany({ name, cnpj }));
       } catch (caught) {
         setError(
           caught instanceof Error
             ? caught.message
-            : "Não foi possível cadastrar o cliente.",
+            : "Não foi possível cadastrar a empresa.",
         );
       }
     });
@@ -38,14 +35,14 @@ export function NewClientForm({
     <section className="app-surface card border">
       <form className="card-body gap-5" onSubmit={handleSubmit}>
         <div>
-          <h2 className="text-xl font-semibold tracking-tight">Novo cliente</h2>
+          <h2 className="text-xl font-semibold tracking-tight">Nova empresa</h2>
           <p className="mt-1 text-sm text-base-content/60">
-            O sistema gera uma senha temporária para você repassar; o cliente
-            define a senha dele no primeiro acesso.
+            Depois de cadastrar, você cadastra as pessoas que vão acessar o
+            painel e, se houver, as integrações.
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+        <div className="grid gap-4 md:grid-cols-[1fr_16rem_auto] md:items-end">
           <label className="form-control">
             <span className="label-text mb-2">Nome</span>
             <input
@@ -55,23 +52,22 @@ export function NewClientForm({
               value={name}
               onChange={(event) => setName(event.target.value)}
               className="input input-bordered w-full"
-              placeholder="Empresa ou responsável"
+              placeholder="Razão social ou nome fantasia"
             />
           </label>
           <label className="form-control">
-            <span className="label-text mb-2">E-mail de acesso</span>
+            <span className="label-text mb-2">CNPJ (opcional)</span>
             <input
-              required
-              type="email"
-              maxLength={191}
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="input input-bordered w-full"
-              placeholder="contato@empresa.com"
+              type="text"
+              maxLength={18}
+              value={cnpj}
+              onChange={(event) => setCnpj(event.target.value)}
+              className="input input-bordered w-full font-mono"
+              placeholder="00.000.000/0000-00"
             />
           </label>
           <button type="submit" className="btn btn-primary" disabled={isPending}>
-            {isPending ? "Cadastrando..." : "Cadastrar cliente"}
+            {isPending ? "Cadastrando..." : "Cadastrar empresa"}
           </button>
         </div>
 

@@ -1,4 +1,5 @@
 import {
+  incidentAuthorLabel,
   incidentEnvironmentLabel,
   incidentSourceLabel,
   incidentStatusLabel,
@@ -99,7 +100,7 @@ export function IncidentDetails({
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="app-surface-muted rounded-2xl border p-4">
                 <p className="text-sm text-base-content/60">Cliente</p>
-                <p className="mt-2 text-2xl font-semibold capitalize">{incident.clientName}</p>
+                <p className="mt-2 text-2xl font-semibold">{incident.companyName}</p>
               </div>
               <div className="app-surface-muted rounded-2xl border p-4">
                 <p className="text-sm text-base-content/60">Ambiente</p>
@@ -111,6 +112,9 @@ export function IncidentDetails({
                 <p className="text-sm text-base-content/60">Criado em</p>
                 <p className="mt-2 text-lg font-semibold leading-tight">
                   {formatDate(incident.createdAt)}
+                </p>
+                <p className="mt-1 text-sm text-base-content/60">
+                  {incidentAuthorLabel(incident)}
                 </p>
               </div>
             </div>

@@ -1,31 +1,25 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
-import { fetchClients } from "@/lib/api";
+import { fetchCompanies } from "@/lib/api";
+import { formatCnpj } from "@/lib/cnpj";
 import { getInitials } from "@/lib/session";
-import type { ClientAccount, ClientListPage } from "@/lib/types";
-import { ClientListEditor } from "./client-list-editor";
-import { NewClientForm } from "./new-client-form";
-import { TemporaryPasswordNotice } from "./temporary-password-notice";
+import type { CompanyListPage } from "@/lib/types";
+import { NewCompanyForm } from "./new-company-form";
 
-type IssuedPassword = { client: ClientAccount; password: string };
-
-export function ClientsPageClient() {
+export function CompaniesPageClient() {
   const router = useRouter();
   const session = useAuthSession();
   const isAdmin = session?.user.role === "ADMIN";
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
-  const [reloadKey, setReloadKey] = useState(0);
-  const [listPage, setListPage] = useState<ClientListPage | null>(null);
+  const [listPage, setListPage] = useState<CompanyListPage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [issuedPassword, setIssuedPassword] = useState<IssuedPassword | null>(
-    null,
-  );
 
   useEffect(() => {
     if (!session) {
@@ -43,7 +37,7 @@ export function ClientsPageClient() {
       return;
     }
 
-    void fetchClients({ page, q: query })
+    void fetchCompanies({ page, q: query })
       .then((data) => {
         setLoadError(null);
         setListPage(data);
@@ -52,48 +46,25 @@ export function ClientsPageClient() {
         setListPage(null);
         setLoadError("Não foi possível carregar os clientes.");
       });
-  }, [isAdmin, page, query, reloadKey]);
+  }, [isAdmin, page, query]);
 
   const totalPages = listPage
     ? Math.max(1, Math.ceil(listPage.total / listPage.pageSize))
     : 1;
 
-  function replaceClient(updated: ClientAccount) {
-    setListPage((current) =>
-      current
-        ? {
-            ...current,
-            items: current.items.map((client) =>
-              client.id === updated.id ? updated : client,
-            ),
-          }
-        : current,
-    );
-  }
-
   return (
     <div>
       <Topbar
         title="Clientes"
-        subtitle="Cadastro dos clientes que acessam o painel, com senha temporária no primeiro acesso."
+        subtitle="Empresas atendidas, as pessoas que acessam o painel por elas e as integrações."
         userInitials={getInitials(session?.user.name ?? "Usuário")}
       />
 
       <div className="space-y-6 p-6">
-        {issuedPassword ? (
-          <TemporaryPasswordNotice
-            clientName={issuedPassword.client.name}
-            clientEmail={issuedPassword.client.email}
-            password={issuedPassword.password}
-            onDismiss={() => setIssuedPassword(null)}
-          />
-        ) : null}
-
-        <NewClientForm
-          onCreated={(client, password) => {
-            setIssuedPassword({ client, password });
-            setReloadKey((key) => key + 1);
-          }}
+        <NewCompanyForm
+          onCreated={(company) =>
+            router.push(`/dashboard/clients/${company.id}`)
+          }
         />
 
         <form
@@ -109,7 +80,7 @@ export function ClientsPageClient() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             className="input input-bordered w-full sm:max-w-md"
-            placeholder="Buscar por nome ou e-mail"
+            placeholder="Buscar por nome ou CNPJ"
             maxLength={191}
           />
           <button type="submit" className="btn">
@@ -124,19 +95,57 @@ export function ClientsPageClient() {
         {listPage && listPage.items.length === 0 ? (
           <p className="text-sm text-base-content/60">
             {query
-              ? "Nenhum cliente encontrado para essa busca."
-              : "Nenhum cliente cadastrado ainda."}
+              ? "Nenhuma empresa encontrada para essa busca."
+              : "Nenhuma empresa cadastrada ainda."}
           </p>
         ) : null}
 
-        {listPage ? (
-          <ClientListEditor
-            clients={listPage.items}
-            onClientChanged={replaceClient}
-            onTemporaryPassword={(client, password) =>
-              setIssuedPassword({ client, password })
-            }
-          />
+        {listPage && listPage.items.length > 0 ? (
+          <div className="app-surface overflow-hidden rounded-3xl border">
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
+                  <tr className="text-base-content/60">
+                    <th>Empresa</th>
+                    <th>CNPJ</th>
+                    <th>Usuários</th>
+                    <th>Chamados em aberto</th>
+                    <th>Situação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listPage.items.map((company) => (
+                    <tr key={company.id} className="hover">
+                      <td>
+                        <Link
+                          href={`/dashboard/clients/${company.id}`}
+                          className="link-hover font-medium"
+                        >
+                          {company.name}
+                        </Link>
+                      </td>
+                      <td className="font-mono text-sm">
+                        {company.cnpj ? formatCnpj(company.cnpj) : "—"}
+                      </td>
+                      <td>{company.userCount}</td>
+                      <td>{company.openIncidents}</td>
+                      <td>
+                        {company.disabledAt ? (
+                          <span className="badge badge-error badge-outline">
+                            Desativada
+                          </span>
+                        ) : (
+                          <span className="badge badge-success badge-outline">
+                            Ativa
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : null}
 
         {listPage && totalPages > 1 ? (
@@ -150,7 +159,7 @@ export function ClientsPageClient() {
               Anterior
             </button>
             <span className="text-sm text-base-content/60">
-              Página {page} de {totalPages} · {listPage.total} clientes
+              Página {page} de {totalPages} · {listPage.total} empresas
             </span>
             <button
               type="button"

@@ -11,7 +11,6 @@ export type BackendAuthSession = {
     name: string;
     email: string;
     role: "ADMIN" | "CLIENT";
-    clientId?: number | null;
     mustChangePassword?: boolean;
   };
 };

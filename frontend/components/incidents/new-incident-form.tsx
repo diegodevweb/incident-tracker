@@ -8,6 +8,7 @@ import {
   incidentEnvironmentLabel,
   userRoleLabel,
 } from "@/lib/labels";
+import { CompanyPicker } from "@/components/companies/company-picker";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import type { IncidentEnvironment, IncidentLevel } from "@/lib/types";
 
@@ -24,7 +25,7 @@ export function NewIncidentForm() {
   const [priority, setPriority] = useState<IncidentLevel>("ERROR");
   const [contactName, setContactName] = useState(session?.user.name ?? "");
   const [contactEmail, setContactEmail] = useState(session?.user.email ?? "");
-  const [adminClientId, setAdminClientId] = useState("");
+  const [companyId, setCompanyId] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -42,26 +43,16 @@ export function NewIncidentForm() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const clientId =
-      role === "CLIENT"
-        ? session?.user.clientId ?? session?.user.id
-        : adminClientId
-          ? Number(adminClientId)
-          : undefined;
-
-    if (!clientId) {
-      setErrorMessage(
-        role === "CLIENT"
-          ? "Não foi possível identificar o cliente autenticado. Faça login novamente."
-          : "Informe o ID do cliente para abrir um ticket administrativo.",
-      );
+    // O cliente abre na própria empresa; o admin escolhe em nome de qual.
+    if (role === "ADMIN" && !companyId) {
+      setErrorMessage("Escolha a empresa do ticket.");
       return;
     }
 
     startTransition(async () => {
       try {
         const result = await createIncident({
-          clientId,
+          companyId: role === "ADMIN" ? Number(companyId) : undefined,
           title,
           description,
           environment,
@@ -177,18 +168,7 @@ export function NewIncidentForm() {
               </label>
 
               {role === "ADMIN" ? (
-                <label className="form-control md:col-span-2">
-                  <span className="label-text mb-2">ID do cliente</span>
-                  <input
-                    required
-                    type="number"
-                    min="1"
-                    value={adminClientId}
-                    onChange={(event) => setAdminClientId(event.target.value)}
-                    className="input input-bordered w-full"
-                    placeholder="Informe o ID do cliente no Laravel"
-                  />
-                </label>
+                <CompanyPicker value={companyId} onChange={setCompanyId} />
               ) : null}
 
               <div className="form-control md:col-span-2">

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { incidentSourceLabel } from "@/lib/labels";
+import { incidentAuthorLabel, incidentSourceLabel } from "@/lib/labels";
 import type { Incident } from "@/lib/types";
 import { IncidentPriorityBadge } from "./incident-priority-badge";
 import { IncidentStatusBadge } from "./incident-status-badge";
@@ -58,7 +58,12 @@ export function IncidentList({
                     {incidentSourceLabel[incident.source]}
                   </div>
                 </td>
-                <td className="capitalize">{incident.clientName}</td>
+                <td>
+                  <p>{incident.companyName}</p>
+                  <p className="text-sm text-base-content/60">
+                    {incidentAuthorLabel(incident)}
+                  </p>
+                </td>
                 <td className="text-sm text-base-content/60">
                   {formatDate(incident.createdAt)}
                 </td>

@@ -1,8 +1,9 @@
 import type {
   AccountProfile,
   AuthSession,
-  ClientAccount,
-  ClientListPage,
+  Company,
+  CompanyListPage,
+  CompanyUser,
   Incident,
   IncidentEnvironment,
   IncidentEvent,
@@ -12,6 +13,7 @@ import type {
   IncidentSource,
   IncidentStatus,
   MonthlyReport,
+  WebhookKey,
 } from "./types";
 
 type BackendIncident = {
@@ -25,12 +27,10 @@ type BackendIncident = {
   environment: IncidentEnvironment;
   createdAt: string;
   updatedAt: string;
-  clientId: number;
-  client: {
-    id: number;
-    name: string;
-    email: string;
-  };
+  companyId: number;
+  company: { id: number; name: string };
+  // A criação pelo webhook não traz o autor.
+  createdBy?: { id: number; name: string } | null;
   // A listagem não traz anexos nem logs; só o detalhe.
   attachments?: {
     id: number;
@@ -136,7 +136,8 @@ function mapIncident(incident: BackendIncident): Incident {
     priority: incident.priority,
     source: incident.source,
     environment: incident.environment,
-    clientName: incident.client.name,
+    companyName: incident.company.name,
+    createdByName: incident.createdBy?.name ?? null,
     createdAt: incident.createdAt,
     attachments: incident.attachments ?? [],
     logs: (incident.logs ?? []).map((log) => ({
@@ -187,21 +188,22 @@ export async function fetchIncident(id: number) {
   return mapIncident(data);
 }
 
-export async function fetchMonthlyReport(startDate: string, endDate: string, clientId?: number) {
+export async function fetchMonthlyReport(startDate: string, endDate: string, companyId?: number) {
   const params = new URLSearchParams({
     startDate,
     endDate,
   });
 
-  if (clientId) {
-    params.set("clientId", String(clientId));
+  if (companyId) {
+    params.set("companyId", String(companyId));
   }
 
   return apiFetch<MonthlyReport>(`/incidents/reports/monthly?${params.toString()}`);
 }
 
 export async function createIncident(payload: {
-  clientId?: number;
+  /** Só o admin envia; o cliente abre na própria empresa. */
+  companyId?: number;
   title: string;
   description: string;
   environment: IncidentEnvironment;
@@ -209,8 +211,8 @@ export async function createIncident(payload: {
   attachments?: File[];
 }) {
   const formData = new FormData();
-  if (payload.clientId) {
-    formData.set("clientId", String(payload.clientId));
+  if (payload.companyId) {
+    formData.set("companyId", String(payload.companyId));
   }
   formData.set("title", payload.title);
   formData.set("description", payload.description);
@@ -315,46 +317,116 @@ export async function changePassword(payload: {
   });
 }
 
-export async function fetchClients(query: { page?: number; q?: string }) {
+export async function fetchCompanies(query: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: "active" | "disabled";
+}) {
   const params = new URLSearchParams();
 
   if (query.page && query.page > 1) params.set("page", String(query.page));
+  if (query.pageSize) params.set("pageSize", String(query.pageSize));
   if (query.q) params.set("q", query.q);
+  if (query.status) params.set("status", query.status);
 
-  return apiFetch<ClientListPage>(
-    `/clients${params.size ? `?${params.toString()}` : ""}`,
+  return apiFetch<CompanyListPage>(
+    `/companies${params.size ? `?${params.toString()}` : ""}`,
   );
 }
 
+export async function fetchCompany(id: number) {
+  return apiFetch<Company>(`/companies/${id}`);
+}
+
+export async function createCompany(payload: { name: string; cnpj?: string }) {
+  return apiFetch<Company>("/companies", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** CNPJ vazio tira o CNPJ da empresa. */
+export async function updateCompany(
+  id: number,
+  payload: { name?: string; cnpj?: string },
+) {
+  return apiFetch<Company>(`/companies/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function setCompanyDisabled(id: number, disabled: boolean) {
+  return apiFetch<Company>(
+    `/companies/${id}/${disabled ? "disable" : "enable"}`,
+    { method: "POST" },
+  );
+}
+
+export async function fetchCompanyUsers(companyId: number) {
+  return apiFetch<CompanyUser[]>(`/companies/${companyId}/users`);
+}
+
 /** A senha temporária só vem nesta resposta. */
-export async function createClient(payload: { name: string; email: string }) {
-  return apiFetch<{ client: ClientAccount; temporaryPassword: string }>(
-    "/clients",
+export async function createCompanyUser(
+  companyId: number,
+  payload: { name: string; email: string },
+) {
+  return apiFetch<{ user: CompanyUser; temporaryPassword: string }>(
+    `/companies/${companyId}/users`,
     { method: "POST", body: JSON.stringify(payload) },
   );
 }
 
-export async function updateClient(
-  id: number,
+export async function updateCompanyUser(
+  companyId: number,
+  userId: number,
   payload: { name?: string; email?: string },
 ) {
-  return apiFetch<ClientAccount>(`/clients/${id}`, {
+  return apiFetch<CompanyUser>(`/companies/${companyId}/users/${userId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
 
 /** A senha temporária só vem nesta resposta. */
-export async function resetClientPassword(id: number) {
+export async function resetCompanyUserPassword(
+  companyId: number,
+  userId: number,
+) {
   return apiFetch<{ temporaryPassword: string }>(
-    `/clients/${id}/password-reset`,
+    `/companies/${companyId}/users/${userId}/password-reset`,
     { method: "POST" },
   );
 }
 
-export async function setClientDisabled(id: number, disabled: boolean) {
-  return apiFetch<ClientAccount>(
-    `/clients/${id}/${disabled ? "disable" : "enable"}`,
+export async function setCompanyUserDisabled(
+  companyId: number,
+  userId: number,
+  disabled: boolean,
+) {
+  return apiFetch<CompanyUser>(
+    `/companies/${companyId}/users/${userId}/${disabled ? "disable" : "enable"}`,
     { method: "POST" },
+  );
+}
+
+export async function fetchWebhookKeys(companyId: number) {
+  return apiFetch<WebhookKey[]>(`/companies/${companyId}/webhook-keys`);
+}
+
+/** A chave completa só vem nesta resposta. */
+export async function createWebhookKey(companyId: number, name: string) {
+  return apiFetch<WebhookKey & { key: string }>(
+    `/companies/${companyId}/webhook-keys`,
+    { method: "POST", body: JSON.stringify({ name }) },
+  );
+}
+
+export async function revokeWebhookKey(companyId: number, keyId: number) {
+  return apiFetch<WebhookKey>(
+    `/companies/${companyId}/webhook-keys/${keyId}`,
+    { method: "DELETE" },
   );
 }
