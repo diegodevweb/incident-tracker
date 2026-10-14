@@ -12,5 +12,5 @@ export class MonthlyReportQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  clientId?: number;
+  companyId?: number;
 }

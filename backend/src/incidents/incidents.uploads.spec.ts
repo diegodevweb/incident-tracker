@@ -24,9 +24,10 @@ describe('IncidentsService uploads', () => {
     sub: 1,
     email: 'admin@example.com',
     role: UserRole.ADMIN,
+    companyId: null,
   };
   const body = {
-    clientId: 1,
+    companyId: 1,
     title: 'Erro na emissão',
     description: 'Nota rejeitada',
     environment: 'production',
@@ -38,6 +39,7 @@ describe('IncidentsService uploads', () => {
       update: jest.Mock;
       findUnique: jest.Mock;
     };
+    company: { findUnique: jest.Mock };
   };
   let storage: {
     uploadObject: jest.Mock;
@@ -48,11 +50,11 @@ describe('IncidentsService uploads', () => {
 
   const incidentRow = {
     id: 10,
-    clientId: 1,
+    companyId: 1,
     attachments: [],
     logs: [],
     events: [],
-    client: {},
+    company: {},
   };
 
   beforeEach(() => {
@@ -62,6 +64,7 @@ describe('IncidentsService uploads', () => {
         update: jest.fn().mockResolvedValue(incidentRow),
         findUnique: jest.fn().mockResolvedValue(incidentRow),
       },
+      company: { findUnique: jest.fn().mockResolvedValue({ id: 1 }) },
     };
     storage = {
       uploadObject: jest.fn(({ key }: { key: string }) =>
@@ -139,6 +142,16 @@ describe('IncidentsService uploads', () => {
       expect(
         storage.deleteObject.mock.calls.map(([key]) => key as string).sort(),
       ).toEqual(uploadedKeys().sort());
+    });
+
+    it('uploads nothing when the admin picks a company that does not exist', async () => {
+      prisma.company.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.createIncident(body, [file(PNG, 'a.png')], admin),
+      ).rejects.toThrow('Empresa não encontrada');
+
+      expect(storage.uploadObject).not.toHaveBeenCalled();
     });
 
     it('deletes the uploaded objects when the update fails', async () => {

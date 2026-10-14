@@ -19,6 +19,7 @@ const ACCOUNT_SELECT = {
   role: true,
   mustChangePassword: true,
   createdAt: true,
+  company: { select: { id: true, name: true, cnpj: true } },
 } satisfies Prisma.UserSelect;
 
 @Injectable()

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
 import { fetchAccount } from "@/lib/api";
+import { formatCnpj } from "@/lib/cnpj";
 import { userRoleLabel } from "@/lib/labels";
 import { getInitials } from "@/lib/session";
 import type { AccountProfile } from "@/lib/types";
@@ -53,13 +54,28 @@ export function ProfilePageClient() {
 
         {account ? (
           <>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div
+              className={`grid gap-4 md:grid-cols-2 ${account.company ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}
+            >
               <div className="app-surface-muted rounded-3xl border p-5">
                 <p className="text-sm text-base-content/60">Perfil</p>
                 <p className="mt-2 text-2xl font-semibold">
                   {userRoleLabel[account.role]}
                 </p>
               </div>
+              {account.company ? (
+                <div className="app-surface-muted rounded-3xl border p-5">
+                  <p className="text-sm text-base-content/60">Empresa</p>
+                  <p className="mt-2 truncate text-lg font-semibold">
+                    {account.company.name}
+                  </p>
+                  {account.company.cnpj ? (
+                    <p className="font-mono text-sm text-base-content/60">
+                      {formatCnpj(account.company.cnpj)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="app-surface-muted rounded-3xl border p-5">
                 <p className="text-sm text-base-content/60">E-mail</p>
                 <p className="mt-2 truncate text-lg font-semibold">

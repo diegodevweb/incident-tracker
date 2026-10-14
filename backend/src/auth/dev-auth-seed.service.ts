@@ -63,6 +63,10 @@ export class DevAuthSeedService implements OnModuleInit {
           email: user.email,
           password: await bcrypt.hash(user.password, 10),
           role: user.role,
+          // Usuário CLIENT sempre pertence a uma empresa.
+          ...(user.role === UserRole.CLIENT
+            ? { company: { create: { name: 'Empresa Dev' } } }
+            : {}),
         },
       });
     }

@@ -37,7 +37,7 @@ describe('IncidentsController authorization', () => {
   const webhookKey = generateWebhookKey().key;
   const webhookKeys = {
     authenticate: jest.fn((key?: string) =>
-      Promise.resolve(key === webhookKey ? { id: 1, clientId: 2 } : null),
+      Promise.resolve(key === webhookKey ? { id: 1, companyId: 2 } : null),
     ),
   };
 
@@ -46,6 +46,7 @@ describe('IncidentsController authorization', () => {
     email: string;
     role: UserRole;
     tokenVersion: number;
+    companyId: number | null;
   };
   const users = new Map<number, FakeUser>();
   const resetUsers = () => {
@@ -55,12 +56,14 @@ describe('IncidentsController authorization', () => {
       email: 'admin@example.com',
       role: UserRole.ADMIN,
       tokenVersion: 0,
+      companyId: null,
     });
     users.set(2, {
       id: 2,
       email: 'cliente@example.com',
       role: UserRole.CLIENT,
       tokenVersion: 0,
+      companyId: 7,
     });
   };
   const prismaFake = {
@@ -134,8 +137,13 @@ describe('IncidentsController authorization', () => {
     const listIncidents = (token: string) =>
       http().get('/incidents').set('Authorization', `Bearer ${token}`);
 
+    // O usuário rebaixado ganha uma empresa: CLIENT sem empresa nem entra.
+    const demoteAdmin = () => {
+      Object.assign(users.get(1)!, { role: UserRole.CLIENT, companyId: 7 });
+    };
+
     it('uses the role stored in the database, not the one in the token', async () => {
-      users.get(1)!.role = UserRole.CLIENT;
+      demoteAdmin();
 
       await http()
         .get('/incidents/reports/monthly')
@@ -146,15 +154,27 @@ describe('IncidentsController authorization', () => {
       expect(incidentsService.getMonthlyReport).not.toHaveBeenCalled();
     });
 
-    it('hands the service the database role of a demoted user', async () => {
-      users.get(1)!.role = UserRole.CLIENT;
+    it('hands the service the database role and company of a demoted user', async () => {
+      demoteAdmin();
 
       await listIncidents(adminToken()).expect(200);
 
       expect(incidentsService.getIncidents).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ sub: 1, role: UserRole.CLIENT }),
+        expect.objectContaining({
+          sub: 1,
+          role: UserRole.CLIENT,
+          companyId: 7,
+        }),
       );
+    });
+
+    it('rejects a client token once the user has no company', async () => {
+      users.get(2)!.companyId = null;
+
+      await listIncidents(clientToken()).expect(401);
+
+      expect(incidentsService.getIncidents).not.toHaveBeenCalled();
     });
 
     it('rejects the token of a user that no longer exists', async () => {
@@ -479,17 +499,18 @@ describe('IncidentsController authorization', () => {
         .expect(401);
     });
 
-    it("hands the key's client to the service", async () => {
+    it("hands the key's company to the service", async () => {
       await postErrorLog(errorLog, webhookKey).expect(201);
 
       expect(incidentsService.createErrorLog).toHaveBeenCalledWith(errorLog, {
         id: 1,
-        clientId: 2,
+        companyId: 2,
       });
     });
 
     it.each([
       ['clientId', 3],
+      ['companyId', 3],
       ['source', 'DASHBOARD'],
       ['status', 'RESOLVED'],
     ])('rejects %s in the body', async (field, value) => {
@@ -500,7 +521,7 @@ describe('IncidentsController authorization', () => {
       expect(incidentsService.createErrorLog).not.toHaveBeenCalled();
     });
 
-    it("reads logs only within the key's client", async () => {
+    it("reads logs only within the key's company", async () => {
       await http()
         .get('/incidents/error-log/5')
         .set('x-api-key', webhookKey)

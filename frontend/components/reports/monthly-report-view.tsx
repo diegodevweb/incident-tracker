@@ -254,7 +254,7 @@ export function MonthlyReportView({
                         #{entry.incidentId} {entry.title}
                       </Link>
                     </td>
-                    <td className="truncate">{entry.clientName}</td>
+                    <td className="truncate">{entry.companyName}</td>
                     <td className="truncate">
                       {entry.status ? incidentStatusLabel[entry.status] : "-"}
                     </td>

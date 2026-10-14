@@ -1,4 +1,5 @@
 import type {
+  Incident,
   IncidentEnvironment,
   IncidentFilter,
   IncidentLevel,
@@ -69,3 +70,14 @@ export const reportExecutionStatusLabel: Record<ReportExecutionStatus, string> =
   ATTENDED: "Atendido",
   ESCALATED: "Escalado",
 };
+
+/** Quem abriu o chamado, para mostrar ao lado da data ou da empresa. */
+export function incidentAuthorLabel(
+  incident: Pick<Incident, "source" | "createdByName">,
+) {
+  if (incident.createdByName) {
+    return `por ${incident.createdByName}`;
+  }
+
+  return incident.source === "WEBHOOK" ? "pela integração" : "autor não registrado";
+}

@@ -6,13 +6,14 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import { generateTemporaryPassword, hashPassword } from '../src/auth/passwords';
+import { isValidCnpj } from '../src/companies/cnpj';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
  * A API inteira contra MySQL e S3 de verdade: migrations aplicadas, módulos
- * reais, nada de dublê. Cada execução cria os próprios usuários (e-mails
- * aleatórios), então pode rodar de novo no mesmo banco; mas o banco precisa
- * ser descartável, nunca o de desenvolvimento.
+ * reais, nada de dublê. Cada execução cria os próprios usuários e empresas
+ * (e-mails e CNPJ aleatórios), então pode rodar de novo no mesmo banco; mas o
+ * banco precisa ser descartável, nunca o de desenvolvimento.
  *
  * Variáveis: DATABASE_URL, JWT_SECRET e STORAGE_* (ver .env.example).
  */
@@ -27,6 +28,20 @@ function assertDisposableDatabase() {
   }
 }
 
+/** CNPJ alfanumérico válido a partir de 12 caracteres: só um par de dígitos fecha. */
+function cnpjFrom(base: string) {
+  const cnpj = Array.from(
+    { length: 100 },
+    (_, digits) => `${base}${String(digits).padStart(2, '0')}`,
+  ).find(isValidCnpj);
+
+  if (!cnpj) {
+    throw new Error(`Nenhum dígito verificador fecha para ${base}`);
+  }
+
+  return cnpj;
+}
+
 // O upload só confere a assinatura do PNG; o resto pode ser qualquer coisa.
 const PNG_SIGNATURE = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -37,12 +52,28 @@ type Session = {
   user: { id: number; mustChangePassword: boolean };
 };
 
-type IncidentSummary = { id: number; clientId: number };
+type Company = { id: number; cnpj: string | null; disabledAt: string | null };
+
+type IncidentSummary = {
+  id: number;
+  companyId: number;
+  company: { id: number; name: string };
+  createdBy: { id: number; name: string } | null;
+};
 
 type IncidentDetail = IncidentSummary & {
   status: string;
   attachments: { url: string }[];
   events: { type: string; actorName: string | null }[];
+};
+
+type Page = { items: IncidentSummary[]; total: number };
+
+type Account = {
+  name: string;
+  email: string;
+  password: string;
+  token: string;
 };
 
 const bodyOf = <T>(response: { body: unknown }) => response.body as T;
@@ -51,16 +82,23 @@ describe('API (e2e)', () => {
   let app: NestExpressApplication;
   const run = randomBytes(4).toString('hex');
   const png = Buffer.concat([PNG_SIGNATURE, randomBytes(64)]);
-
-  const admin = { email: `e2e-admin-${run}@example.test`, password: '' };
-  const client = {
-    id: 0,
-    email: `e2e-cliente-${run}@example.test`,
+  const account = (name: string, slug: string): Account => ({
+    name,
+    email: `e2e-${slug}-${run}@example.test`,
     password: '',
-  };
-  let adminToken = '';
-  let clientToken = '';
+    token: '',
+  });
+
+  const admin = account('Admin e2e', 'admin');
+  // Ana e Bruno na empresa Alfa; Carla na Beta.
+  const ana = account('Ana e2e', 'ana');
+  const bruno = account('Bruno e2e', 'bruno');
+  const carla = account('Carla e2e', 'carla');
+  const alfaCnpj = cnpjFrom(`E2E${run.toUpperCase()}1`);
+  let alfa: Company;
+  let beta: Company;
   let incidentId = 0;
+  let webhookKey = '';
 
   const http = () => request(app.getHttpServer());
   const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -74,6 +112,46 @@ describe('API (e2e)', () => {
     bodyOf<IncidentDetail>(
       await http().get(`/incidents/${id}`).set(bearer(token)).expect(200),
     );
+
+  const listIncidents = async (token: string) =>
+    bodyOf<Page>(await http().get('/incidents').set(bearer(token)).expect(200));
+
+  const createCompany = async (body: Record<string, unknown>) =>
+    bodyOf<Company>(
+      await http()
+        .post('/companies')
+        .set(bearer(admin.token))
+        .send(body)
+        .expect(201),
+    );
+
+  const createUser = async (company: Company, user: Account) => {
+    const created = bodyOf<{ temporaryPassword: string }>(
+      await http()
+        .post(`/companies/${company.id}/users`)
+        .set(bearer(admin.token))
+        .send({ name: user.name, email: user.email })
+        .expect(201),
+    );
+    user.password = created.temporaryPassword;
+  };
+
+  /** Troca a senha temporária e guarda o token novo. */
+  const activate = async (user: Account) => {
+    const pending = await login(user.email, user.password);
+    const newPassword = generateTemporaryPassword(user.email);
+    const changed = bodyOf<Session>(
+      await http()
+        .post('/account/password')
+        .set(bearer(pending.accessToken))
+        .send({ currentPassword: user.password, newPassword })
+        .expect(200),
+    );
+
+    user.password = newPassword;
+    user.token = changed.accessToken;
+    return { pending, changed };
+  };
 
   beforeAll(async () => {
     assertDisposableDatabase();
@@ -91,7 +169,7 @@ describe('API (e2e)', () => {
     admin.password = generateTemporaryPassword(admin.email);
     await app.get(PrismaService).user.create({
       data: {
-        name: 'Admin e2e',
+        name: admin.name,
         email: admin.email,
         password: await hashPassword(admin.password),
         role: UserRole.ADMIN,
@@ -109,30 +187,36 @@ describe('API (e2e)', () => {
 
   it('requires a token on protected routes', async () => {
     await http().get('/incidents').expect(401);
-    await http().get('/clients').expect(401);
+    await http().get('/companies').expect(401);
   });
 
-  it('lets the admin register a client with a temporary password', async () => {
-    adminToken = (await login(admin.email, admin.password)).accessToken;
+  it('lets the admin register companies, with a normalized alphanumeric CNPJ', async () => {
+    admin.token = (await login(admin.email, admin.password)).accessToken;
 
-    const created = bodyOf<{
-      client: { id: number };
-      temporaryPassword: string;
-    }>(
-      await http()
-        .post('/clients')
-        .set(bearer(adminToken))
-        .send({ name: 'Cliente e2e', email: client.email })
-        .expect(201),
-    );
+    alfa = await createCompany({
+      name: `Alfa ${run}`,
+      cnpj: alfaCnpj.toLowerCase(),
+    });
+    beta = await createCompany({ name: `Beta ${run}` });
 
-    client.id = created.client.id;
-    client.password = created.temporaryPassword;
-    expect(client.password).toHaveLength(24);
+    expect(alfa.cnpj).toBe(alfaCnpj);
+    expect(beta.cnpj).toBeNull();
+
+    // O mesmo CNPJ não entra duas vezes.
+    await http()
+      .post('/companies')
+      .set(bearer(admin.token))
+      .send({ name: 'Cópia', cnpj: alfaCnpj })
+      .expect(409);
   });
 
-  it('only lets a client with a temporary password change it', async () => {
-    const pending = await login(client.email, client.password);
+  it('only lets a user with a temporary password change it', async () => {
+    await createUser(alfa, ana);
+    await createUser(alfa, bruno);
+    await createUser(beta, carla);
+    expect(ana.password).toHaveLength(24);
+
+    const pending = await login(ana.email, ana.password);
     expect(pending.user.mustChangePassword).toBe(true);
 
     const blocked = await http()
@@ -141,29 +225,20 @@ describe('API (e2e)', () => {
       .expect(403);
     expect(blocked.body).toMatchObject({ code: 'PASSWORD_CHANGE_REQUIRED' });
 
-    const newPassword = generateTemporaryPassword(client.email);
-    const changed = bodyOf<Session>(
-      await http()
-        .post('/account/password')
-        .set(bearer(pending.accessToken))
-        .send({ currentPassword: client.password, newPassword })
-        .expect(200),
-    );
-
-    client.password = newPassword;
-    clientToken = changed.accessToken;
+    const { changed } = await activate(ana);
     expect(changed.user.mustChangePassword).toBe(false);
 
     // A troca derruba o token antigo e emite um novo.
     await http().get('/account').set(bearer(pending.accessToken)).expect(401);
-    await http().get('/incidents').set(bearer(clientToken)).expect(200);
+    await activate(bruno);
+    await activate(carla);
   });
 
   it('stores an uploaded print and serves it back through a signed URL', async () => {
     const { data: created } = bodyOf<{ data: IncidentSummary }>(
       await http()
         .post('/incidents')
-        .set(bearer(clientToken))
+        .set(bearer(ana.token))
         .field('title', 'Falha ao emitir nota')
         .field('description', 'Erro 500 ao confirmar a emissão')
         .field('environment', 'production')
@@ -175,51 +250,67 @@ describe('API (e2e)', () => {
     );
 
     incidentId = created.id;
-    expect(created.clientId).toBe(client.id);
+    expect(created.companyId).toBe(alfa.id);
+    expect(created.createdBy).toMatchObject({ name: ana.name });
 
-    const detail = await getIncident(incidentId, clientToken);
+    const detail = await getIncident(incidentId, ana.token);
     expect(detail.attachments).toHaveLength(1);
-    expect(detail.events.map((event) => event.type)).toContain(
-      'INCIDENT_CREATED',
-    );
 
     const download = await fetch(detail.attachments[0].url);
     expect(download.status).toBe(200);
     expect(Buffer.from(await download.arrayBuffer())).toEqual(png);
   });
 
+  it('shows the incident to every user of the company, and only to them', async () => {
+    const seenByCoworker = await getIncident(incidentId, bruno.token);
+    expect(seenByCoworker.createdBy).toEqual({
+      id: expect.any(Number) as number,
+      name: ana.name,
+    });
+    expect((await listIncidents(bruno.token)).items.map((i) => i.id)).toEqual([
+      incidentId,
+    ]);
+
+    await http()
+      .get(`/incidents/${incidentId}`)
+      .set(bearer(carla.token))
+      .expect(404);
+    expect((await listIncidents(carla.token)).total).toBe(0);
+  });
+
   it('lets only the admin change the status, and records who did it', async () => {
     await http()
       .patch(`/incidents/${incidentId}`)
-      .set(bearer(clientToken))
+      .set(bearer(ana.token))
       .send({ status: 'IN_PROGRESS' })
       .expect(403);
 
     await http()
       .patch(`/incidents/${incidentId}`)
-      .set(bearer(adminToken))
+      .set(bearer(admin.token))
       .send({ status: 'IN_PROGRESS' })
       .expect(200);
 
-    const detail = await getIncident(incidentId, clientToken);
+    const detail = await getIncident(incidentId, bruno.token);
     expect(detail.status).toBe('IN_PROGRESS');
     expect(detail.events).toContainEqual(
       expect.objectContaining({
         type: 'STATUS_CHANGED',
-        actorName: 'Admin e2e',
+        actorName: admin.name,
       }),
     );
     expect(JSON.stringify(detail)).not.toContain(admin.email);
   });
 
-  it('opens incidents from the webhook only for the key owner', async () => {
-    const { key } = bodyOf<{ key: string }>(
+  it("opens incidents from the webhook for the key's company", async () => {
+    const created = bodyOf<{ key: string }>(
       await http()
-        .post(`/clients/${client.id}/webhook-keys`)
-        .set(bearer(adminToken))
+        .post(`/companies/${alfa.id}/webhook-keys`)
+        .set(bearer(admin.token))
         .send({ name: 'Integração e2e' })
         .expect(201),
     );
+    webhookKey = created.key;
 
     const errorLog = {
       title: 'Timeout no gateway',
@@ -230,31 +321,86 @@ describe('API (e2e)', () => {
 
     await http().post('/incidents/error-logs').send(errorLog).expect(401);
 
-    const created = await http()
+    const response = await http()
       .post('/incidents/error-logs')
-      .set('x-api-key', key)
+      .set('x-api-key', webhookKey)
       .send(errorLog)
       .expect(201);
 
-    expect(created.body).toMatchObject({
-      data: { clientId: client.id, source: 'WEBHOOK', status: 'OPEN' },
+    expect(response.body).toMatchObject({
+      data: { companyId: alfa.id, source: 'WEBHOOK', status: 'OPEN' },
     });
-  });
 
-  it("lists only the client's own incidents, paginated", async () => {
-    const page = bodyOf<{ items: IncidentSummary[]; total: number }>(
-      await http().get('/incidents').set(bearer(clientToken)).expect(200),
-    );
-
+    // A empresa inteira vê o chamado do webhook.
+    const page = await listIncidents(bruno.token);
     expect(page.total).toBe(2);
-    expect(page.items.map((incident) => incident.clientId)).toEqual([
-      client.id,
-      client.id,
+    expect(page.items.map((incident) => incident.companyId)).toEqual([
+      alfa.id,
+      alfa.id,
     ]);
   });
 
+  it('makes the admin pick an existing company to open an incident', async () => {
+    const body = {
+      title: 'Aberto pelo suporte',
+      description: 'Contato por telefone',
+      environment: 'production',
+    };
+
+    await http()
+      .post('/incidents')
+      .set(bearer(admin.token))
+      .send(body)
+      .expect(400);
+
+    const { data: created } = bodyOf<{ data: IncidentSummary }>(
+      await http()
+        .post('/incidents')
+        .set(bearer(admin.token))
+        .send({ ...body, companyId: beta.id })
+        .expect(201),
+    );
+
+    const seenByCarla = await getIncident(created.id, carla.token);
+    expect(seenByCarla.createdBy).toMatchObject({ name: admin.name });
+    expect(JSON.stringify(seenByCarla)).not.toContain(admin.email);
+  });
+
+  it("disabling a company locks out its users and its keys, and nobody else's", async () => {
+    await http()
+      .post(`/companies/${alfa.id}/disable`)
+      .set(bearer(admin.token))
+      .expect(200);
+
+    await http().get('/incidents').set(bearer(ana.token)).expect(401);
+    await http().get('/incidents').set(bearer(bruno.token)).expect(401);
+    await http()
+      .post('/auth/login')
+      .send({ email: ana.email, password: ana.password })
+      .expect(403);
+    await http()
+      .get('/incidents/error-logs')
+      .set('x-api-key', webhookKey)
+      .expect(401);
+    await http().get('/incidents').set(bearer(carla.token)).expect(200);
+
+    await http()
+      .post(`/companies/${alfa.id}/enable`)
+      .set(bearer(admin.token))
+      .expect(200);
+
+    // Sessões antigas continuam encerradas; um login novo volta a funcionar.
+    await http().get('/incidents').set(bearer(ana.token)).expect(401);
+    ana.token = (await login(ana.email, ana.password)).accessToken;
+    expect((await listIncidents(ana.token)).total).toBe(2);
+    await http()
+      .get('/incidents/error-logs')
+      .set('x-api-key', webhookKey)
+      .expect(200);
+  });
+
   it('revokes the token on logout', async () => {
-    await http().post('/auth/logout').set(bearer(clientToken)).expect(204);
-    await http().get('/incidents').set(bearer(clientToken)).expect(401);
+    await http().post('/auth/logout').set(bearer(carla.token)).expect(204);
+    await http().get('/incidents').set(bearer(carla.token)).expect(401);
   });
 });

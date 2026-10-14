@@ -15,8 +15,8 @@ export type WebhookRequest = Request & {
 };
 
 /**
- * Autentica as rotas do webhook pela chave do cliente no header x-api-key e
- * deixa em request.webhookKey de qual cliente ela é. O cliente sai da chave,
+ * Autentica as rotas do webhook pela chave da empresa no header x-api-key e
+ * deixa em request.webhookKey de qual empresa ela é. A empresa sai da chave,
  * nunca do corpo da requisição.
  */
 @Injectable()

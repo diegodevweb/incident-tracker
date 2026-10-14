@@ -8,6 +8,7 @@ import { User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
+import { isBlockedAccount } from './blocked-account';
 import { LoginRateLimitService } from './login-rate-limit.service';
 
 // Hash bcrypt (custo 10) de uma senha aleatória descartada. É comparado quando o
@@ -32,6 +33,7 @@ export class AuthService {
       where: {
         email: normalizedEmail,
       },
+      include: { company: { select: { disabledAt: true } } },
     });
 
     const passwordMatches = await bcrypt.compare(
@@ -48,7 +50,7 @@ export class AuthService {
 
     // Só chega aqui com a senha certa, então dizer que a conta está desativada
     // não ajuda quem tenta adivinhar e-mails.
-    if (user.disabledAt) {
+    if (isBlockedAccount(user)) {
       throw new ForbiddenException(
         'Conta desativada. Fale com o administrador.',
       );

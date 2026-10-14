@@ -12,6 +12,10 @@ describe('JwtStrategy.validate', () => {
     tokenVersion: 2,
     mustChangePassword: false,
     disabledAt: null as Date | null,
+    companyId: 5 as number | null,
+    company: { disabledAt: null as Date | null } as {
+      disabledAt: Date | null;
+    } | null,
   };
   let findUnique: jest.Mock;
   let strategy: JwtStrategy;
@@ -37,6 +41,7 @@ describe('JwtStrategy.validate', () => {
       email: 'db@example.com',
       role: UserRole.CLIENT,
       mustChangePassword: false,
+      companyId: 5,
     });
   });
 
@@ -54,6 +59,38 @@ describe('JwtStrategy.validate', () => {
     await expect(
       strategy.validate({ sub: 4, email: 'a', role: UserRole.CLIENT, tv: 2 }),
     ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('rejects a user of a disabled company', async () => {
+    findUnique.mockResolvedValue({
+      ...dbUser,
+      company: { disabledAt: new Date() },
+    });
+
+    await expect(
+      strategy.validate({ sub: 4, email: 'a', role: UserRole.CLIENT, tv: 2 }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('rejects a client without a company', async () => {
+    findUnique.mockResolvedValue({ ...dbUser, companyId: null, company: null });
+
+    await expect(
+      strategy.validate({ sub: 4, email: 'a', role: UserRole.CLIENT, tv: 2 }),
+    ).rejects.toThrow(UnauthorizedException);
+  });
+
+  it('accepts an admin without a company', async () => {
+    findUnique.mockResolvedValue({
+      ...dbUser,
+      role: UserRole.ADMIN,
+      companyId: null,
+      company: null,
+    });
+
+    await expect(
+      strategy.validate({ sub: 4, email: 'a', role: UserRole.ADMIN, tv: 2 }),
+    ).resolves.toMatchObject({ role: UserRole.ADMIN, companyId: null });
   });
 
   it('rejects when the user was removed', async () => {

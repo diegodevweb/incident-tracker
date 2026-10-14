@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -11,7 +12,7 @@ import { Trim } from '../../common/trim';
 import { MAX_VARCHAR_LENGTH } from '../../incidents/limits';
 import { MAX_PAGE_SIZE } from '../../incidents/pagination';
 
-export class ListClientsQueryDto {
+export class ListCompaniesQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -25,10 +26,15 @@ export class ListClientsQueryDto {
   @Max(MAX_PAGE_SIZE)
   pageSize?: number;
 
-  /** Busca por nome ou e-mail. */
+  /** Busca por nome ou CNPJ (com ou sem pontuação). */
   @IsOptional()
   @Trim()
   @IsString()
   @MaxLength(MAX_VARCHAR_LENGTH)
   q?: string;
+
+  /** Sem filtro, lista ativas e desativadas. */
+  @IsOptional()
+  @IsIn(['active', 'disabled'])
+  status?: 'active' | 'disabled';
 }

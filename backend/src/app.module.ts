@@ -5,7 +5,7 @@ import { IncidentsModule } from './incidents/incidents.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { AccountModule } from './account/account.module';
-import { ClientsModule } from './clients/clients.module';
+import { CompaniesModule } from './companies/companies.module';
 import { HealthModule } from './health/health.module';
 import { StorageModule } from './storage/storage.module';
 import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
@@ -20,7 +20,7 @@ import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
     IncidentsModule,
     WebhookKeysModule,
     AccountModule,
-    ClientsModule,
+    CompaniesModule,
     HealthModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

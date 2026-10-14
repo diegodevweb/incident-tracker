@@ -14,11 +14,13 @@ const admin: JwtPayload = {
   sub: 1,
   email: 'admin@example.com',
   role: UserRole.ADMIN,
+  companyId: null,
 };
 const client: JwtPayload = {
   sub: 2,
   email: 'cliente@example.com',
   role: UserRole.CLIENT,
+  companyId: 2,
 };
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
@@ -45,6 +47,7 @@ describe('IncidentsService audit events', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
+    company: { findUnique: jest.Mock };
   };
   let storage: {
     uploadObject: jest.Mock;
@@ -55,7 +58,7 @@ describe('IncidentsService audit events', () => {
 
   const incidentRow = (overrides: Record<string, unknown> = {}) => ({
     id: 10,
-    clientId: 2,
+    companyId: 2,
     title: 'Erro',
     description: 'Descrição',
     correctiveActions: null,
@@ -64,7 +67,8 @@ describe('IncidentsService audit events', () => {
     source: IncidentSource.DASHBOARD,
     createdAt: new Date('2026-10-05T12:00:00Z'),
     updatedAt: new Date('2026-10-06T12:00:00Z'),
-    client: { id: 2, name: 'Cliente', email: 'cliente@example.com' },
+    company: { id: 2, name: 'Cliente' },
+    createdBy: { id: 2, name: 'Cliente' },
     attachments: [],
     logs: [],
     events: [],
@@ -81,6 +85,7 @@ describe('IncidentsService audit events', () => {
         create: jest.fn().mockResolvedValue(incidentRow()),
         update: jest.fn().mockResolvedValue(incidentRow()),
       },
+      company: { findUnique: jest.fn().mockResolvedValue({ id: 2 }) },
     };
     storage = {
       uploadObject: jest.fn(({ key }: { key: string }) =>
@@ -99,7 +104,7 @@ describe('IncidentsService audit events', () => {
 
   describe('creating from the dashboard', () => {
     const body = {
-      clientId: 2,
+      companyId: 2,
       title: 'Erro na emissão',
       description: 'Nota rejeitada',
       environment: 'production',
@@ -160,7 +165,7 @@ describe('IncidentsService audit events', () => {
         message: 'ETIMEDOUT',
         environment: 'production',
       },
-      { id: 7, clientId: 2 },
+      { id: 7, companyId: 2 },
     );
 
     expect(lastWrite(prisma.incident.create).data.events).toEqual({
@@ -329,7 +334,6 @@ describe('IncidentsService audit events', () => {
 
       const created = await service.createIncident(
         {
-          clientId: 2,
           title: 't',
           description: 'd',
           environment: 'production',

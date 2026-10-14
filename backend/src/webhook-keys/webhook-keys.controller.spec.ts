@@ -59,6 +59,7 @@ describe('WebhookKeysController', () => {
                   email: 'u@example.com',
                   role: roles[where.id],
                   tokenVersion: 0,
+                  companyId: 7,
                 }),
             },
           },
@@ -88,12 +89,12 @@ describe('WebhookKeysController', () => {
   });
 
   const routes = [
-    ['GET', () => http().get('/clients/2/webhook-keys')],
+    ['GET', () => http().get('/companies/2/webhook-keys')],
     [
       'POST',
-      () => http().post('/clients/2/webhook-keys').send({ name: 'ERP' }),
+      () => http().post('/companies/2/webhook-keys').send({ name: 'ERP' }),
     ],
-    ['DELETE', () => http().delete('/clients/2/webhook-keys/5')],
+    ['DELETE', () => http().delete('/companies/2/webhook-keys/5')],
   ] as const;
 
   it.each(routes)('%s requires a token', async (_, call) => {
@@ -114,16 +115,16 @@ describe('WebhookKeysController', () => {
     const admin = `Bearer ${tokenFor(1)}`;
 
     await http()
-      .get('/clients/2/webhook-keys')
+      .get('/companies/2/webhook-keys')
       .set('Authorization', admin)
       .expect(200);
     await http()
-      .post('/clients/2/webhook-keys')
+      .post('/companies/2/webhook-keys')
       .set('Authorization', admin)
       .send({ name: 'ERP produção' })
       .expect(201);
     await http()
-      .delete('/clients/2/webhook-keys/5')
+      .delete('/companies/2/webhook-keys/5')
       .set('Authorization', admin)
       .expect(200);
 
@@ -139,7 +140,7 @@ describe('WebhookKeysController', () => {
     ['with extra fields', { name: 'ERP', keyHash: 'abc' }],
   ])('rejects a key %s', async (_, body) => {
     await http()
-      .post('/clients/2/webhook-keys')
+      .post('/companies/2/webhook-keys')
       .set('Authorization', `Bearer ${tokenFor(1)}`)
       .send(body)
       .expect(400);
@@ -149,7 +150,7 @@ describe('WebhookKeysController', () => {
 
   it('rejects non-numeric ids', async () => {
     await http()
-      .delete('/clients/abc/webhook-keys/5')
+      .delete('/companies/abc/webhook-keys/5')
       .set('Authorization', `Bearer ${tokenFor(1)}`)
       .expect(400);
   });

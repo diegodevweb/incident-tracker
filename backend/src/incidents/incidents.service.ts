@@ -10,6 +10,7 @@ import { CreateErrorLogDto } from './dto/create-error-log.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AttachmentCategory,
+  IncidentAttachment,
   IncidentEventType,
   IncidentLevel,
   IncidentSource,
@@ -32,7 +33,7 @@ import {
   DEFAULT_PAGE_SIZE,
   MAX_REPORT_RANGE_DAYS,
 } from './pagination';
-import { PUBLIC_CLIENT_SELECT } from './public-client';
+import { PUBLIC_COMPANY_SELECT, PUBLIC_USER_SELECT } from './public-selects';
 import {
   INCIDENT_EVENTS_QUERY,
   attachmentAddedEvents,
@@ -50,17 +51,10 @@ type UploadedAttachment = {
   size: number;
 };
 
-type IncidentWithRelations = Prisma.IncidentGetPayload<{
-  include: {
-    client: { select: typeof PUBLIC_CLIENT_SELECT };
-    attachments: true;
-    logs: true;
-  };
-}>;
-
 type IncidentDetailRow = Prisma.IncidentGetPayload<{
   include: {
-    client: { select: typeof PUBLIC_CLIENT_SELECT };
+    company: { select: typeof PUBLIC_COMPANY_SELECT };
+    createdBy: { select: typeof PUBLIC_USER_SELECT };
     attachments: true;
     logs: true;
     events: typeof INCIDENT_EVENTS_QUERY;
@@ -145,12 +139,12 @@ export class IncidentsService {
       ...(query.status ? { status: query.status } : {}),
       ...(query.source ? { source: query.source } : {}),
       ...(query.environment ? { environment: query.environment } : {}),
-      ...this.buildScopedClientFilter(user, query.clientId),
-      ...(query.client
+      ...this.buildScopedCompanyFilter(user, query.companyId),
+      ...(query.company
         ? {
-            client: {
+            company: {
               name: {
-                contains: query.client,
+                contains: query.company,
               },
             },
           }
@@ -189,7 +183,8 @@ export class IncidentsService {
         where,
         // A lista não usa logs nem anexos: ficam só no detalhe, que também assina as URLs.
         include: {
-          client: { select: PUBLIC_CLIENT_SELECT },
+          company: { select: PUBLIC_COMPANY_SELECT },
+          createdBy: { select: PUBLIC_USER_SELECT },
         },
         // O id desempata createdAt iguais para uma página não repetir nem pular linhas.
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -257,6 +252,8 @@ export class IncidentsService {
       );
     }
 
+    // A empresa é conferida antes do upload: um 400 aqui não deixa arquivo órfão.
+    const companyId = await this.resolveCompanyId(user, data.companyId);
     const generalAttachments = await this.uploadAttachments(
       attachments,
       AttachmentCategory.GENERAL,
@@ -273,7 +270,8 @@ export class IncidentsService {
           priority: data.priority ?? IncidentLevel.ERROR,
           source: IncidentSource.DASHBOARD,
           environment: data.environment,
-          clientId: this.resolveClientId(user, data.clientId),
+          companyId,
+          createdById: user.sub,
           logs: {
             create: {
               message: data.description,
@@ -300,7 +298,8 @@ export class IncidentsService {
           },
         },
         include: {
-          client: { select: PUBLIC_CLIENT_SELECT },
+          company: { select: PUBLIC_COMPANY_SELECT },
+          createdBy: { select: PUBLIC_USER_SELECT },
           attachments: true,
           logs: true,
           events: INCIDENT_EVENTS_QUERY,
@@ -318,7 +317,8 @@ export class IncidentsService {
     const incident = await this.prisma.incident.findUnique({
       where: { id },
       include: {
-        client: { select: PUBLIC_CLIENT_SELECT },
+        company: { select: PUBLIC_COMPANY_SELECT },
+        createdBy: { select: PUBLIC_USER_SELECT },
         attachments: true,
         logs: {
           orderBy: {
@@ -333,7 +333,7 @@ export class IncidentsService {
       throw new NotFoundException(`Incidente não encontrado para o ID ${id}`);
     }
 
-    this.assertIncidentAccess(incident.clientId, user);
+    this.assertIncidentAccess(incident.companyId, user);
 
     return this.presentIncidentDetail(incident);
   }
@@ -350,10 +350,10 @@ export class IncidentsService {
           gte: startDate,
           lte: endDate,
         },
-        ...this.buildScopedClientFilter(user, query.clientId),
+        ...this.buildScopedCompanyFilter(user, query.companyId),
       },
       include: {
-        client: { select: PUBLIC_CLIENT_SELECT },
+        company: { select: PUBLIC_COMPANY_SELECT },
         // O relatório só usa os anexos das ações corretivas e o último log.
         attachments: {
           where: { category: AttachmentCategory.CORRECTIVE_ACTION },
@@ -413,7 +413,7 @@ export class IncidentsService {
         priority: incident.priority,
         description: incident.description,
         status: incident.status,
-        clientName: incident.client.name,
+        companyName: incident.company.name,
         latestLogMessage: latestLog?.message ?? null,
       };
     });
@@ -545,7 +545,8 @@ export class IncidentsService {
             ...(events.length ? { events: { create: events } } : {}),
           },
           include: {
-            client: { select: PUBLIC_CLIENT_SELECT },
+            company: { select: PUBLIC_COMPANY_SELECT },
+            createdBy: { select: PUBLIC_USER_SELECT },
             attachments: true,
             logs: {
               orderBy: {
@@ -579,13 +580,13 @@ export class IncidentsService {
     });
   }
 
-  // As rotas do webhook só enxergam os logs do cliente dono da chave.
-  async getErrorLogs(query: ListErrorLogsQueryDto, clientId: number) {
+  // As rotas do webhook só enxergam os logs da empresa dona da chave.
+  async getErrorLogs(query: ListErrorLogsQueryDto, companyId: number) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? DEFAULT_ERROR_LOGS_PAGE_SIZE;
 
     const incidentList = await this.prisma.incidentLog.findMany({
-      where: { incident: { clientId } },
+      where: { incident: { companyId } },
       include: {
         incident: true,
       },
@@ -601,9 +602,9 @@ export class IncidentsService {
     return incidentList;
   }
 
-  async getErrorLog(id: number, clientId: number) {
+  async getErrorLog(id: number, companyId: number) {
     const incidentLog = await this.prisma.incidentLog.findFirst({
-      where: { id, incident: { clientId } },
+      where: { id, incident: { companyId } },
       include: {
         incident: true,
       },
@@ -616,7 +617,7 @@ export class IncidentsService {
     return incidentLog;
   }
 
-  // O cliente vem da chave do webhook, nunca do corpo. Origem e status são
+  // A empresa vem da chave do webhook, nunca do corpo. Origem e status são
   // fixos: a integração só abre chamados, quem atende muda o status.
   async createErrorLog(
     data: CreateErrorLogDto,
@@ -632,7 +633,7 @@ export class IncidentsService {
         priority: data.priority ?? IncidentLevel.ERROR,
         source: IncidentSource.WEBHOOK,
         environment: data.environment,
-        clientId: webhookKey.clientId,
+        companyId: webhookKey.companyId,
         logs: {
           create: {
             message: data.message,
@@ -653,7 +654,7 @@ export class IncidentsService {
       },
       include: {
         logs: true,
-        client: { select: PUBLIC_CLIENT_SELECT },
+        company: { select: PUBLIC_COMPANY_SELECT },
       },
     });
 
@@ -679,33 +680,61 @@ export class IncidentsService {
     }
   }
 
-  private buildScopedClientFilter(
+  // O cliente vê os chamados da empresa dele, de qualquer usuário e do webhook.
+  private buildScopedCompanyFilter(
     user: JwtPayload,
-    requestedClientId?: number,
+    requestedCompanyId?: number,
   ) {
     if (user.role === UserRole.ADMIN) {
-      return requestedClientId ? { clientId: requestedClientId } : {};
+      return requestedCompanyId ? { companyId: requestedCompanyId } : {};
     }
 
-    return { clientId: user.sub };
+    return { companyId: this.requireUserCompany(user) };
   }
 
-  private resolveClientId(user: JwtPayload, requestedClientId?: number) {
-    if (user.role === UserRole.ADMIN) {
-      return requestedClientId ?? user.sub;
+  // O cliente abre sempre na própria empresa; o admin precisa escolher uma.
+  private async resolveCompanyId(
+    user: JwtPayload,
+    requestedCompanyId?: number,
+  ) {
+    if (user.role !== UserRole.ADMIN) {
+      return this.requireUserCompany(user);
     }
 
-    return user.sub;
+    if (!requestedCompanyId) {
+      throw new BadRequestException('Informe a empresa do chamado');
+    }
+
+    const company = await this.prisma.company.findUnique({
+      where: { id: requestedCompanyId },
+      select: { id: true },
+    });
+
+    if (!company) {
+      throw new BadRequestException('Empresa não encontrada');
+    }
+
+    return company.id;
   }
 
-  private assertIncidentAccess(clientId: number, user: JwtPayload) {
+  private assertIncidentAccess(companyId: number, user: JwtPayload) {
     if (user.role === UserRole.ADMIN) {
       return;
     }
 
-    if (clientId !== user.sub) {
+    if (companyId !== this.requireUserCompany(user)) {
       throw new NotFoundException('Incidente não encontrado');
     }
+  }
+
+  // O JwtStrategy já barra cliente sem empresa; isto só garante que um token
+  // sem companyId nunca vire um filtro vazio (que mostraria tudo).
+  private requireUserCompany(user: JwtPayload) {
+    if (!user.companyId) {
+      throw new ForbiddenException('Usuário sem empresa');
+    }
+
+    return user.companyId;
   }
 
   private async uploadAttachments(
@@ -796,7 +825,9 @@ export class IncidentsService {
     };
   }
 
-  private async resolveIncidentAttachmentUrls(incident: IncidentWithRelations) {
+  private async resolveIncidentAttachmentUrls<
+    T extends { attachments: IncidentAttachment[] },
+  >(incident: T) {
     return {
       ...incident,
       attachments: await Promise.all(

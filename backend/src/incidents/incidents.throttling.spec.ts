@@ -72,6 +72,7 @@ describe('Incidents throttling', () => {
                   email: 'cliente@example.com',
                   role: UserRole.CLIENT,
                   tokenVersion: 0,
+                  companyId: 7,
                 }),
             },
           },

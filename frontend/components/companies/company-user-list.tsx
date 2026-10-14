@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { resetClientPassword, setClientDisabled, updateClient } from "@/lib/api";
-import type { ClientAccount } from "@/lib/types";
+import {
+  resetCompanyUserPassword,
+  setCompanyUserDisabled,
+  updateCompanyUser,
+} from "@/lib/api";
+import type { CompanyUser } from "@/lib/types";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(
@@ -10,22 +14,24 @@ function formatDate(value: string) {
   );
 }
 
-function ClientCard({
-  client,
+function CompanyUserCard({
+  companyId,
+  user,
   onChanged,
   onTemporaryPassword,
 }: {
-  client: ClientAccount;
-  onChanged: (client: ClientAccount) => void;
-  onTemporaryPassword: (client: ClientAccount, password: string) => void;
+  companyId: number;
+  user: CompanyUser;
+  onChanged: (user: CompanyUser) => void;
+  onTemporaryPassword: (user: CompanyUser, password: string) => void;
 }) {
-  const [name, setName] = useState(client.name);
-  const [email, setEmail] = useState(client.email);
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const isDisabled = client.disabledAt !== null;
+  const isDisabled = user.disabledAt !== null;
   const hasChanges =
-    name.trim() !== client.name || email.trim().toLowerCase() !== client.email;
+    name.trim() !== user.name || email.trim().toLowerCase() !== user.email;
 
   function run(action: () => Promise<void>, fallbackError: string) {
     setError(null);
@@ -41,26 +47,32 @@ function ClientCard({
   function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     run(async () => {
-      const updated = await updateClient(client.id, { name, email });
+      const updated = await updateCompanyUser(companyId, user.id, {
+        name,
+        email,
+      });
       setName(updated.name);
       setEmail(updated.email);
       onChanged(updated);
-    }, "Não foi possível salvar o cliente.");
+    }, "Não foi possível salvar o usuário.");
   }
 
   function resetPassword() {
     if (
       !window.confirm(
-        `Gerar uma nova senha temporária para ${client.name}? A senha atual deixa de valer e as sessões abertas do cliente são encerradas.`,
+        `Gerar uma nova senha temporária para ${user.name}? A senha atual deixa de valer e as sessões abertas dessa pessoa são encerradas.`,
       )
     ) {
       return;
     }
 
     run(async () => {
-      const { temporaryPassword } = await resetClientPassword(client.id);
-      onTemporaryPassword(client, temporaryPassword);
-      onChanged({ ...client, mustChangePassword: true });
+      const { temporaryPassword } = await resetCompanyUserPassword(
+        companyId,
+        user.id,
+      );
+      onTemporaryPassword(user, temporaryPassword);
+      onChanged({ ...user, mustChangePassword: true });
     }, "Não foi possível gerar a nova senha.");
   }
 
@@ -68,25 +80,25 @@ function ClientCard({
     if (
       !isDisabled &&
       !window.confirm(
-        `Desativar ${client.name}? O cliente não consegue mais entrar, as sessões abertas são encerradas e as chaves de webhook dele param de funcionar.`,
+        `Desativar ${user.name}? A pessoa não consegue mais entrar e as sessões abertas são encerradas. Os chamados dela continuam com a empresa.`,
       )
     ) {
       return;
     }
 
     run(async () => {
-      onChanged(await setClientDisabled(client.id, !isDisabled));
-    }, "Não foi possível alterar a situação do cliente.");
+      onChanged(await setCompanyUserDisabled(companyId, user.id, !isDisabled));
+    }, "Não foi possível alterar a situação do usuário.");
   }
 
   return (
-    <article className="app-surface card border">
-      <form className="card-body gap-5" onSubmit={save}>
+    <article className="app-surface-muted rounded-2xl border">
+      <form className="space-y-4 p-4" onSubmit={save}>
         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">{client.name}</h2>
+            <h3 className="font-semibold">{user.name}</h3>
             <p className="text-sm text-base-content/60">
-              Cliente desde {formatDate(client.createdAt)}
+              Usuário desde {formatDate(user.createdAt)}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -95,7 +107,7 @@ function ClientCard({
             ) : (
               <span className="badge badge-success badge-outline">Ativo</span>
             )}
-            {client.mustChangePassword ? (
+            {user.mustChangePassword ? (
               <span className="badge badge-warning badge-outline">
                 Senha temporária pendente
               </span>
@@ -103,7 +115,7 @@ function ClientCard({
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-[1fr_1fr_12rem]">
+        <div className="grid gap-4 md:grid-cols-2">
           <label className="form-control">
             <span className="label-text mb-2">Nome</span>
             <input
@@ -126,10 +138,6 @@ function ClientCard({
               className="input input-bordered w-full"
             />
           </label>
-          <div className="app-surface-muted rounded-2xl border p-4">
-            <p className="text-sm text-base-content/60">Chamados em aberto</p>
-            <p className="mt-1 text-2xl font-semibold">{client.openIncidents}</p>
-          </div>
         </div>
 
         {error ? <div className="alert alert-error text-sm">{error}</div> : null}
@@ -137,7 +145,7 @@ function ClientCard({
         <div className="flex flex-wrap justify-end gap-3">
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-ghost btn-sm"
             onClick={resetPassword}
             disabled={isPending || isDisabled}
           >
@@ -145,7 +153,11 @@ function ClientCard({
           </button>
           <button
             type="button"
-            className={isDisabled ? "btn btn-outline" : "btn btn-outline btn-error"}
+            className={
+              isDisabled
+                ? "btn btn-outline btn-sm"
+                : "btn btn-outline btn-error btn-sm"
+            }
             onClick={toggleDisabled}
             disabled={isPending}
           >
@@ -153,7 +165,7 @@ function ClientCard({
           </button>
           <button
             type="submit"
-            className="btn btn-primary"
+            className="btn btn-primary btn-sm"
             disabled={isPending || !hasChanges}
           >
             Salvar
@@ -164,25 +176,36 @@ function ClientCard({
   );
 }
 
-export function ClientListEditor({
-  clients,
-  onClientChanged,
+export function CompanyUserList({
+  companyId,
+  users,
+  onUserChanged,
   onTemporaryPassword,
 }: {
-  clients: ClientAccount[];
-  onClientChanged: (client: ClientAccount) => void;
-  onTemporaryPassword: (client: ClientAccount, password: string) => void;
+  companyId: number;
+  users: CompanyUser[];
+  onUserChanged: (user: CompanyUser) => void;
+  onTemporaryPassword: (user: CompanyUser, password: string) => void;
 }) {
+  if (users.length === 0) {
+    return (
+      <p className="text-sm text-base-content/60">
+        Nenhum usuário cadastrado nesta empresa ainda.
+      </p>
+    );
+  }
+
   return (
-    <section className="space-y-4">
-      {clients.map((client) => (
-        <ClientCard
-          key={client.id}
-          client={client}
-          onChanged={onClientChanged}
+    <div className="space-y-3">
+      {users.map((user) => (
+        <CompanyUserCard
+          key={user.id}
+          companyId={companyId}
+          user={user}
+          onChanged={onUserChanged}
           onTemporaryPassword={onTemporaryPassword}
         />
       ))}
-    </section>
+    </div>
   );
 }

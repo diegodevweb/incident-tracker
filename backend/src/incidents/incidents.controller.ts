@@ -143,7 +143,7 @@ export class IncidentsController {
     @Param('id', ParseIntPipe) id: number,
     @Req() request: WebhookRequest,
   ) {
-    return this.incidentsService.getErrorLog(id, request.webhookKey.clientId);
+    return this.incidentsService.getErrorLog(id, request.webhookKey.companyId);
   }
 
   @Get('error-logs')
@@ -154,7 +154,7 @@ export class IncidentsController {
   ) {
     return this.incidentsService.getErrorLogs(
       query,
-      request.webhookKey.clientId,
+      request.webhookKey.companyId,
     );
   }
 

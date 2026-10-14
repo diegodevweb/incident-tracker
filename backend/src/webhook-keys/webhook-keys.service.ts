@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 // Formato: itk_<prefixo>_<segredo>. O prefixo (12 hex) é público e localiza a
@@ -15,7 +15,7 @@ const LAST_USED_RESOLUTION_MS = 60_000;
 // O que sai nas respostas da API. O hash nunca sai.
 const PUBLIC_WEBHOOK_KEY_SELECT = {
   id: true,
-  clientId: true,
+  companyId: true,
   name: true,
   prefix: true,
   createdAt: true,
@@ -23,7 +23,7 @@ const PUBLIC_WEBHOOK_KEY_SELECT = {
   revokedAt: true,
 } satisfies Prisma.WebhookKeySelect;
 
-export type AuthenticatedWebhookKey = { id: number; clientId: number };
+export type AuthenticatedWebhookKey = { id: number; companyId: number };
 
 export function generateWebhookKey() {
   const prefix = randomBytes(6).toString('hex');
@@ -40,7 +40,7 @@ export function hashWebhookKey(key: string) {
 export class WebhookKeysService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Devolve a chave e o cliente dela, ou null se a chave não vale. */
+  /** Devolve a chave e a empresa dela, ou null se a chave não vale. */
   async authenticate(
     presentedKey: string | undefined,
   ): Promise<AuthenticatedWebhookKey | null> {
@@ -52,14 +52,13 @@ export class WebhookKeysService {
 
     const stored = await this.prisma.webhookKey.findUnique({
       where: { prefix },
-      include: { client: { select: { role: true, disabledAt: true } } },
+      include: { company: { select: { disabledAt: true } } },
     });
 
     if (
       !stored ||
       stored.revokedAt ||
-      stored.client.role !== UserRole.CLIENT ||
-      stored.client.disabledAt ||
+      stored.company.disabledAt ||
       !this.hashMatches(stored.keyHash, presentedKey)
     ) {
       return null;
@@ -75,15 +74,15 @@ export class WebhookKeysService {
       });
     }
 
-    return { id: stored.id, clientId: stored.clientId };
+    return { id: stored.id, companyId: stored.companyId };
   }
 
-  async create(clientId: number, name: string) {
-    await this.assertClient(clientId);
+  async create(companyId: number, name: string) {
+    await this.assertCompany(companyId);
 
     const { prefix, key } = generateWebhookKey();
     const created = await this.prisma.webhookKey.create({
-      data: { clientId, name, prefix, keyHash: hashWebhookKey(key) },
+      data: { companyId, name, prefix, keyHash: hashWebhookKey(key) },
       select: PUBLIC_WEBHOOK_KEY_SELECT,
     });
 
@@ -91,19 +90,19 @@ export class WebhookKeysService {
     return { ...created, key };
   }
 
-  async list(clientId: number) {
-    await this.assertClient(clientId);
+  async list(companyId: number) {
+    await this.assertCompany(companyId);
 
     return this.prisma.webhookKey.findMany({
-      where: { clientId },
+      where: { companyId },
       select: PUBLIC_WEBHOOK_KEY_SELECT,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
   }
 
-  async revoke(clientId: number, keyId: number) {
+  async revoke(companyId: number, keyId: number) {
     const key = await this.prisma.webhookKey.findFirst({
-      where: { id: keyId, clientId },
+      where: { id: keyId, companyId },
       select: PUBLIC_WEBHOOK_KEY_SELECT,
     });
 
@@ -131,14 +130,14 @@ export class WebhookKeysService {
     );
   }
 
-  private async assertClient(clientId: number) {
-    const client = await this.prisma.user.findUnique({
-      where: { id: clientId },
-      select: { role: true },
+  private async assertCompany(companyId: number) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { id: true },
     });
 
-    if (!client || client.role !== UserRole.CLIENT) {
-      throw new NotFoundException('Cliente não encontrado');
+    if (!company) {
+      throw new NotFoundException('Empresa não encontrada');
     }
   }
 }

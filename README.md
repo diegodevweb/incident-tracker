@@ -96,7 +96,7 @@ Each error log includes:
 
 **POST** `/incidents/error-logs`
 
-Header `x-api-key: <webhook key of the client>`. The incident is created for the client that owns the key, always with status `OPEN` and source `WEBHOOK`; sending `clientId`, `source` or `status` in the body returns 400.
+Header `x-api-key: <webhook key of the company>`. The incident is created for the client company that owns the key, always with status `OPEN` and source `WEBHOOK`; sending `companyId`, `source` or `status` in the body returns 400.
 
 ```json
 {
@@ -114,27 +114,32 @@ Header `x-api-key: <webhook key of the client>`. The incident is created for the
 }
 ```
 
-`GET /incidents/error-logs` and `GET /incidents/error-log/:id` use the same header and only return logs of the key's client.
+`GET /incidents/error-logs` and `GET /incidents/error-log/:id` use the same header and only return logs of the key's company.
 
 ### Webhook keys (admin only)
 
-Each client gets its own keys. Only a SHA-256 hash is stored; the full key is shown once, in the creation response. To rotate a key, create a new one, update the integration and revoke the old one.
+Each client company gets its own keys, managed on the company page (**Integrações**) or through the API. Only a SHA-256 hash is stored; the full key is shown once, in the creation response. To rotate a key, create a new one, update the integration and revoke the old one.
 
-* **POST** `/clients/:clientId/webhook-keys` with `{ "name": "ERP produção" }`: creates a key and returns it in `key`
-* **GET** `/clients/:clientId/webhook-keys`: lists the keys (prefix, name, creation, last use, revocation), never the key itself
-* **DELETE** `/clients/:clientId/webhook-keys/:keyId`: revokes the key
+* **POST** `/companies/:companyId/webhook-keys` with `{ "name": "ERP produção" }`: creates a key and returns it in `key`
+* **GET** `/companies/:companyId/webhook-keys`: lists the keys (prefix, name, creation, last use, revocation), never the key itself
+* **DELETE** `/companies/:companyId/webhook-keys/:keyId`: revokes the key
 
-Keys of a disabled client stop working until the client is enabled again.
+Keys of a disabled company stop working until the company is enabled again.
 
-### Accounts
+### Client companies and accounts
 
-Admins manage client accounts on the **Clientes** page (or the API below). There is no self sign-up, and admins are not created through the panel.
+A client is a company with any number of users. Every user of a company sees all of its incidents (opened by any of them or by the webhook), and each incident shows who opened it. Admins manage companies and their users on the **Clientes** page (or the API below). There is no self sign-up, and admins are not created through the panel.
 
-* **POST** `/clients` with `{ "name", "email" }`: creates a client with a random temporary password, returned once in `temporaryPassword`
-* **GET** `/clients?page=&pageSize=&q=`: lists clients (name, e-mail, status, open incidents)
-* **PATCH** `/clients/:id`: changes name or e-mail
-* **POST** `/clients/:id/password-reset`: issues a new temporary password and ends the client's sessions
-* **POST** `/clients/:id/disable` and `/clients/:id/enable`: a disabled client cannot log in, loses its sessions and its webhook keys stop working. Clients are disabled, never deleted
+* **POST** `/companies` with `{ "name", "cnpj"? }`: creates a company. The CNPJ is optional, unique, accepted with or without punctuation and validated by its check digits, numeric or alphanumeric
+* **GET** `/companies?page=&pageSize=&q=&status=active|disabled`: lists companies (search by name or CNPJ) with their user count and open incidents
+* **GET** `/companies/:id` and **PATCH** `/companies/:id`: read or change name and CNPJ (`"cnpj": null` removes it)
+* **POST** `/companies/:id/disable` and `/enable`: none of its users can log in, their sessions end and its webhook keys stop working. Companies are disabled, never deleted
+* **GET** `/companies/:id/users` and **POST** `/companies/:id/users` with `{ "name", "email" }`: lists users, or creates one with a random temporary password returned once in `temporaryPassword`
+* **PATCH** `/companies/:id/users/:userId`: changes name or e-mail
+* **POST** `/companies/:id/users/:userId/password-reset`: issues a new temporary password and ends the user's sessions
+* **POST** `/companies/:id/users/:userId/disable` and `/enable`: a disabled user cannot log in and loses its sessions. Users are disabled, never deleted
+
+An admin opening an incident must send `companyId`; a client user always opens it in their own company.
 
 With a temporary password, the only things a user can do are read `GET /account`, change the password at `POST /account/password` (current and new password; the new one follows `src/auth/password-policy.ts`) and log out. Changing the password ends the user's other sessions. `PATCH /account` changes the user's own name.
 
