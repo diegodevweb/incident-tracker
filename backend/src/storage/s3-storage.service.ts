@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
@@ -17,6 +17,7 @@ import {
 
 @Injectable()
 export class S3StorageService extends StorageService implements OnModuleInit {
+  private readonly logger = new Logger(S3StorageService.name);
   private readonly client: S3Client;
 
   constructor(private readonly storageConfig: StorageConfig) {
@@ -75,18 +76,32 @@ export class S3StorageService extends StorageService implements OnModuleInit {
   }
 
   private async ensureBucketExists() {
+    const Bucket = this.storageConfig.bucket;
+
     try {
-      await this.client.send(
-        new HeadBucketCommand({
-          Bucket: this.storageConfig.bucket,
-        }),
-      );
-    } catch {
-      await this.client.send(
-        new CreateBucketCommand({
-          Bucket: this.storageConfig.bucket,
-        }),
-      );
+      await this.client.send(new HeadBucketCommand({ Bucket }));
+      return;
+    } catch (error) {
+      if (!this.storageConfig.createBucketOnBoot) {
+        // Só os anexos dependem do storage: a API sobe mesmo assim, em vez de
+        // cair a cada reinício por uma conferência que a chave pode não ter
+        // permissão para fazer.
+        const status = (error as { $metadata?: { httpStatusCode?: number } })
+          .$metadata?.httpStatusCode;
+        const reason = [
+          error instanceof Error ? error.name : 'erro desconhecido',
+          status ? `HTTP ${status}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+        this.logger.warn(
+          `Não foi possível conferir o bucket "${Bucket}" (${reason}). Em produção a API não cria o bucket: ele precisa existir e a chave precisa poder ler e gravar objetos nele. Enquanto isso, anexos vão falhar.`,
+        );
+        return;
+      }
     }
+
+    await this.client.send(new CreateBucketCommand({ Bucket }));
   }
 }
