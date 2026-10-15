@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
-import { UserRole } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
-import { generateTemporaryPassword, hashPassword } from '../src/auth/passwords';
+import { generateTemporaryPassword } from '../src/auth/passwords';
+import { CreateAdminError, createAdmin } from '../src/cli/create-admin';
 import { isValidCnpj } from '../src/companies/cnpj';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -165,16 +165,10 @@ describe('API (e2e)', () => {
     );
     await app.init();
 
-    // O primeiro admin não tem rota (em produção sai de um comando no deploy).
+    // O primeiro admin não tem rota: em produção sai do comando create-admin,
+    // que usa esta mesma função.
     admin.password = generateTemporaryPassword(admin.email);
-    await app.get(PrismaService).user.create({
-      data: {
-        name: admin.name,
-        email: admin.email,
-        password: await hashPassword(admin.password),
-        role: UserRole.ADMIN,
-      },
-    });
+    await createAdmin(app.get(PrismaService), admin);
   });
 
   afterAll(async () => {
@@ -188,6 +182,24 @@ describe('API (e2e)', () => {
   it('requires a token on protected routes', async () => {
     await http().get('/incidents').expect(401);
     await http().get('/companies').expect(401);
+  });
+
+  it('creates the first admin with the chosen password and refuses a repeated e-mail', async () => {
+    const session = await login(admin.email, admin.password);
+
+    // A senha foi escolhida, não é temporária; e o admin alcança rotas de admin.
+    expect(session.user.mustChangePassword).toBe(false);
+    await http().get('/companies').set(bearer(session.accessToken)).expect(200);
+
+    await expect(
+      createAdmin(app.get(PrismaService), {
+        name: 'Outro nome',
+        email: admin.email.toUpperCase(),
+        password: generateTemporaryPassword(admin.email),
+      }),
+    ).rejects.toThrow(CreateAdminError);
+    // Nada mudou: a senha original continua valendo.
+    await login(admin.email, admin.password);
   });
 
   it('lets the admin register companies, with a normalized alphanumeric CNPJ', async () => {
