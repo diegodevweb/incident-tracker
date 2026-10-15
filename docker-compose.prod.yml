@@ -6,7 +6,11 @@
 # Só o Caddy publica portas (80 e 443). O painel e a API conversam na rede
 # "edge"; o MySQL fica na rede "data", que não tem saída para a internet. As
 # migrations rodam sozinhas antes da API subir.
-name: incident-tracker
+#
+# O nome é diferente do projeto de desenvolvimento (o do docker-compose.yml vem
+# do nome da pasta, "incident-tracker"), para os dois nunca dividirem volumes
+# nem containers na mesma máquina.
+name: incident-tracker-prod
 
 x-common: &common
   init: true
