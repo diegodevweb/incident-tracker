@@ -46,8 +46,8 @@ External Systems (Laravel, APIs)
 
 ### Infrastructure
 
-* Docker (local development)
-* Cloud-ready architecture (AWS)
+* Docker (local development and production images)
+* Caddy (HTTPS) in front of a single server, S3-compatible storage (Cloudflare R2 in production)
 
 ---
 
@@ -209,14 +209,30 @@ Unit tests need no database. The e2e suite (`npm run test:e2e`) boots the whole 
 
 ---
 
-## Cloud Architecture
+## Deployment
 
-The system is designed for deployment in cloud environments using AWS:
+Production runs on a single server with Docker Compose (`docker-compose.prod.yml`):
 
-* **EC2** → Application hosting
-* **RDS** → Managed relational database
-* **S3** → File storage (attachments, screenshots)
-* **Lambda** → Background processing and scheduled tasks
+```
+Internet ──► Caddy (HTTPS, ports 80/443) ──► web (Next.js panel) ──► api (NestJS) ──► MySQL
+                         │                                              │
+                         └── only the 3 webhook routes ────────────────►┘      └──► S3-compatible storage
+```
+
+* Caddy is the only service with published ports. It gets the certificate for `DOMAIN` automatically and sends just `POST /incidents/error-logs`, `GET /incidents/error-logs` and `GET /incidents/error-log/:id` to the API (they are authenticated by webhook keys); everything else goes to the panel, which talks to the API over the internal network. Caddy also overwrites `X-Real-IP`, which the login rate limit depends on
+* MySQL sits on a network without internet access. The API and the panel run as an unprivileged user, with a read-only root filesystem and no extra capabilities
+* The migrations (`prisma migrate deploy`) run by themselves, in a one-off container, before the API starts
+* Files go to an S3-compatible bucket you create beforehand (Cloudflare R2 in production); the API does not run a storage server of its own
+* The login rate limit lives in the API's memory, so run a single API instance
+
+To bring it up, copy `.env.production.example` to `.env`, fill it in (the file lists how to generate each secret), point the DNS of `DOMAIN` to the server and run:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml run --rm api node dist/cli/run-create-admin --name "Your Name" --email you@company.com
+```
+
+The second command creates the first admin (see [Creating admins](#creating-admins)); the new image of an update is built the same way as the first. Back up the database before updating, because new migrations are applied automatically. Build with `--pull` now and then so the base images get their security fixes, and keep the `caddy_data` volume: it holds the certificates, which Let's Encrypt limits per domain.
 
 ---
 
@@ -237,7 +253,7 @@ The system is designed for deployment in cloud environments using AWS:
 * Notifications and alerts
 * Authentication and authorization
 * Background job processing (queues)
-* Full AWS deployment
+* Automated backups and a deployment guide
 
 ---
 

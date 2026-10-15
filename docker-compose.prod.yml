@@ -1,0 +1,151 @@
+# Produção em um único servidor. Uso (a partir da raiz do repositório, com o
+# .env preenchido a partir de .env.production.example):
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Só o Caddy publica portas (80 e 443). O painel e a API conversam na rede
+# "edge"; o MySQL fica na rede "data", que não tem saída para a internet. As
+# migrations rodam sozinhas antes da API subir.
+name: incident-tracker
+
+x-common: &common
+  init: true
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# Sem capacidades extras e com o sistema de arquivos só de leitura: a API e o
+# painel não gravam nada em disco (os anexos vão para o storage S3).
+x-locked-down: &locked-down
+  cap_drop:
+    - ALL
+  read_only: true
+
+# As variáveis de senha usam ":?" sem mensagem de propósito: o texto depois de
+# "PASSWORD:" é lido pelo GitGuardian como se fosse uma senha escrita no arquivo.
+# O compose continua recusando subir sem elas.
+x-database-url: &database-url mysql://${MYSQL_USER:-incident}:${MYSQL_PASSWORD:?}@mysql:3306/${MYSQL_DATABASE:-incident_tracker}
+
+services:
+  # A imagem oficial do MySQL começa como root e troca para o usuário mysql, por
+  # isso este serviço fica sem o "locked-down" (cap_drop e sistema de arquivos
+  # só de leitura). A proteção dele é a rede "data", sem acesso à internet.
+  mysql:
+    <<: *common
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-incident_tracker}
+      MYSQL_USER: ${MYSQL_USER:-incident}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  migrate:
+    <<: *common
+    build:
+      context: ./backend
+      target: migrate
+    restart: "no"
+    environment:
+      DATABASE_URL: *database-url
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - data
+
+  api:
+    <<: [*common, *locked-down]
+    build:
+      context: ./backend
+      target: runtime
+    environment:
+      DATABASE_URL: *database-url
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      # Um proxy confiável (o Caddy) entre a internet e a API.
+      TRUST_PROXY: "1"
+      STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?defina STORAGE_ENDPOINT no .env}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:?defina STORAGE_BUCKET no .env}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:?defina STORAGE_ACCESS_KEY_ID no .env}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:?defina STORAGE_SECRET_ACCESS_KEY no .env}
+      STORAGE_REGION: ${STORAGE_REGION:-auto}
+      STORAGE_FORCE_PATH_STYLE: ${STORAGE_FORCE_PATH_STYLE:-true}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    tmpfs:
+      - /tmp
+    networks:
+      - data
+      - edge
+
+  web:
+    <<: [*common, *locked-down]
+    build:
+      context: ./frontend
+    environment:
+      API_URL: http://api:3001
+    depends_on:
+      api:
+        condition: service_healthy
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    networks:
+      - edge
+
+  caddy:
+    <<: *common
+    image: caddy:2-alpine
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      DOMAIN: ${DOMAIN:?defina DOMAIN no .env}
+      ACME_EMAIL: ${ACME_EMAIL:?defina ACME_EMAIL no .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificados: não apague, o Let's Encrypt limita as emissões por domínio.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - edge
+
+networks:
+  data:
+    internal: true
+  edge: {}
+
+volumes:
+  mysql_data:
+  caddy_data:
+  caddy_config:
