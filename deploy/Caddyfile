@@ -1,0 +1,43 @@
+# Entrada pública do servidor: HTTPS automático (Let's Encrypt) para {$DOMAIN}.
+# O Caddy é o único serviço com porta publicada; DOMAIN e ACME_EMAIL vêm do .env.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	log
+	header -Server
+
+	request_body {
+		# Até 6 anexos de 10 MB (backend/src/incidents/limits.ts) mais os campos.
+		max_size 64MB
+	}
+
+	# Webhook das integrações: a API fica fora da internet, e só estas três rotas
+	# (autenticadas por chave) chegam a ela. O Caddy troca o X-Forwarded-For pelo
+	# IP que ele mesmo viu, e a API confia nele (TRUST_PROXY=1).
+	@webhook_post {
+		method POST
+		path /incidents/error-logs
+	}
+	@webhook_get {
+		method GET
+		path /incidents/error-logs /incidents/error-log/*
+	}
+	handle @webhook_post {
+		reverse_proxy api:3001
+	}
+	handle @webhook_get {
+		reverse_proxy api:3001
+	}
+
+	# O resto é o painel, que fala com a API pela rede interna. O X-Real-IP é
+	# sempre sobrescrito aqui: é com ele que o painel informa à API o IP do
+	# cliente, e o limite de tentativas de login depende de não ser forjável.
+	handle {
+		reverse_proxy web:3000 {
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}

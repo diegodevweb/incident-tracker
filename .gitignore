@@ -1,0 +1,2 @@
+# Segredos do docker-compose.prod.yml (o modelo é o .env.production.example)
+/.env

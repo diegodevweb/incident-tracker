@@ -4,6 +4,8 @@ import path from "node:path";
 
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig: NextConfig = {
+  // Só o Dockerfile liga isto (servidor mínimo para a imagem de produção).
+  output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   poweredByHeader: false,
   turbopack: {
     root: appRoot,
