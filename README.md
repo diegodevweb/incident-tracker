@@ -243,7 +243,7 @@ Create an `A` record (and an `AAAA` one if the server has IPv6) for the domain y
 
 **2. Create the storage bucket (R2)**
 
-1. In the Cloudflare dashboard, create an R2 bucket and leave public access off. Attachments are served through short-lived signed URLs, and no CORS rule is needed because they are plain links
+1. In the Cloudflare dashboard, create an R2 bucket and leave public access off. In production the API never creates the bucket: on start it only checks it and logs a warning if it cannot, so the bucket has to exist beforehand. Attachments are served through short-lived signed URLs, and no CORS rule is needed because they are plain links
 2. Create an R2 API token with the **Object Read & Write** permission, limited to that bucket. Copy the Access Key ID and the Secret Access Key (the secret is shown once) and the account's S3 endpoint, `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
 3. Optional, if you want to keep database backups in R2: use a separate bucket with its own token (the backups hold every user's data and should not share credentials with the application)
 
@@ -343,7 +343,8 @@ Migrations only move forward. If the failed version applied a new one, the old c
 |---|---|
 | Browser shows a certificate error, or Caddy logs a failed challenge | The DNS record resolves to this server, ports 80 and 443 are open, and `DOMAIN` in `.env` is spelled exactly like the record |
 | `502`/`503` from the site | `docker compose -f docker-compose.prod.yml ps`: `web` and `api` must be `healthy`; read their logs |
-| `api` restarts in a loop | Its logs name the cause. Storage errors mean a wrong `STORAGE_ENDPOINT`, bucket name or keys (the bucket must exist; the API only creates it if the token is allowed to) |
+| `api` restarts in a loop | Its logs name the cause (the database or `JWT_SECRET`, for example). A storage problem does not stop the API: it only logs a `WARN` about the bucket on start |
+| Opening an incident with an attachment fails with `500`, and the `api` log has a bucket `WARN` on start | `STORAGE_ENDPOINT`, `STORAGE_BUCKET` and the keys in `.env`. The bucket must exist, and the token must be able to read and write objects in it |
 | `migrate` exits with an error | Its logs show the migration or the database error. A password that no longer matches the database (see Secrets) shows up here |
 | Logins are refused with `429` for everyone | The panel is not seeing client IPs: the DNS is proxied by Cloudflare, or another proxy sits in front of Caddy |
 | Webhook answers `401` | The key is wrong, was revoked, or the company is disabled; keys are created on the company page |

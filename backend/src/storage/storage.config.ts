@@ -9,6 +9,16 @@ export class StorageConfig {
     return this.configService.getOrThrow<string>('STORAGE_REGION');
   }
 
+  /**
+   * Fora de produção a API cria o bucket que faltar (o storage de
+   * desenvolvimento e o dos testes começam vazios). Em produção o bucket é
+   * criado à mão e a chave da aplicação só lê e grava objetos, então a API
+   * não tenta criá-lo.
+   */
+  get createBucketOnBoot() {
+    return this.configService.get<string>('NODE_ENV') !== 'production';
+  }
+
   get bucket() {
     return this.configService.getOrThrow<string>('STORAGE_BUCKET');
   }
