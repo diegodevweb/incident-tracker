@@ -1,17 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/server-api";
-
-// O id entra no caminho da chamada ao backend. Sem esta checagem, um valor como
-// "..%2Ferror-logs" (o Next entrega o parâmetro decodificado) faria o proxy
-// chamar outra rota da API com o token do usuário. Até 10 dígitos: o id é INT.
-const INCIDENT_ID_PATTERN = /^\d{1,10}$/;
-
-function invalidIncidentIdResponse() {
-  return NextResponse.json(
-    { message: "Chamado não encontrado." },
-    { status: 404 },
-  );
-}
+import { invalidIncidentIdResponse, isIncidentId } from "./incident-id";
 
 export async function GET(
   _request: Request,
@@ -19,7 +8,7 @@ export async function GET(
 ) {
   const { id } = await context.params;
 
-  if (!INCIDENT_ID_PATTERN.test(id)) {
+  if (!isIncidentId(id)) {
     return invalidIncidentIdResponse();
   }
 
@@ -40,7 +29,7 @@ export async function PATCH(
 ) {
   const { id } = await context.params;
 
-  if (!INCIDENT_ID_PATTERN.test(id)) {
+  if (!isIncidentId(id)) {
     return invalidIncidentIdResponse();
   }
 

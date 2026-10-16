@@ -79,6 +79,7 @@ describe('IncidentsService pagination, report limits and user exposure', () => {
     attachments: [],
     logs: [],
     events: [],
+    comments: [],
     ...overrides,
   });
 

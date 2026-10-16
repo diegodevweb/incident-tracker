@@ -26,6 +26,8 @@ describe('IncidentsController authorization', () => {
     getIncident: jest.fn().mockResolvedValue({ id: 1 }),
     createIncident: jest.fn().mockResolvedValue({ message: 'ok' }),
     updateIncident: jest.fn().mockResolvedValue({ id: 1 }),
+    addAttachments: jest.fn().mockResolvedValue({ id: 1 }),
+    addComment: jest.fn().mockResolvedValue({ id: 1 }),
     getMonthlyReport: jest.fn().mockResolvedValue({}),
     getErrorLogs: jest.fn().mockResolvedValue([]),
     getErrorLog: jest.fn().mockResolvedValue({ id: 1 }),
@@ -91,6 +93,7 @@ describe('IncidentsController authorization', () => {
     startDate: '2026-10-01T00:00:00.000Z',
     endDate: '2026-10-31T23:59:59.999Z',
   };
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -214,15 +217,6 @@ describe('IncidentsController authorization', () => {
         handler: () => incidentsService.getMonthlyReport,
       },
       {
-        name: 'PATCH /incidents/:id',
-        send: (token?: string) =>
-          withToken(
-            http().patch('/incidents/1').send({ status: 'RESOLVED' }),
-            token,
-          ),
-        handler: () => incidentsService.updateIncident,
-      },
-      {
         name: 'POST /incidents/preventive-actions',
         send: (token?: string) =>
           withToken(
@@ -317,6 +311,66 @@ describe('IncidentsController authorization', () => {
 
       expect(incidentsService.createIncident).toHaveBeenCalledTimes(1);
     });
+
+    // Quais mudanças o cliente pode fazer é regra do service (resolver ou reabrir).
+    it('lets a CLIENT send a status change to the service with their own identity', async () => {
+      await http()
+        .patch('/incidents/1')
+        .set('Authorization', `Bearer ${clientToken()}`)
+        .send({ status: 'RESOLVED' })
+        .expect(200);
+
+      expect(incidentsService.updateIncident).toHaveBeenCalledWith(
+        1,
+        { status: 'RESOLVED' },
+        expect.objectContaining({ role: UserRole.CLIENT, sub: 2 }),
+        [],
+      );
+    });
+
+    it('lets a CLIENT attach evidence to an incident', async () => {
+      await http()
+        .post('/incidents/1/attachments')
+        .set('Authorization', `Bearer ${clientToken()}`)
+        .attach('attachments', png, 'erro.png')
+        .expect(201);
+
+      expect(incidentsService.addAttachments).toHaveBeenCalledWith(
+        1,
+        [expect.objectContaining({ originalname: 'erro.png' })],
+        expect.objectContaining({ role: UserRole.CLIENT, sub: 2 }),
+      );
+    });
+
+    it('lets a CLIENT send a message to the service, which decides if they may reply yet', async () => {
+      await http()
+        .post('/incidents/1/comments')
+        .set('Authorization', `Bearer ${clientToken()}`)
+        .send({ message: '  Voltou a acontecer hoje  ' })
+        .expect(201);
+
+      expect(incidentsService.addComment).toHaveBeenCalledWith(
+        1,
+        { message: 'Voltou a acontecer hoje' },
+        expect.objectContaining({ role: UserRole.CLIENT, sub: 2 }),
+      );
+    });
+
+    it.each([
+      [
+        'POST /incidents/:id/attachments',
+        () => http().post('/incidents/1/attachments'),
+      ],
+      [
+        'POST /incidents/:id/comments',
+        () => http().post('/incidents/1/comments').send({ message: 'Oi' }),
+      ],
+    ])('%s rejects requests without a token', async (_name, send) => {
+      await send().expect(401);
+
+      expect(incidentsService.addAttachments).not.toHaveBeenCalled();
+      expect(incidentsService.addComment).not.toHaveBeenCalled();
+    });
   });
 
   describe('upload and input limits', () => {
@@ -325,7 +379,6 @@ describe('IncidentsController authorization', () => {
       description: 'Nota rejeitada',
       environment: 'production',
     };
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
     const openTicketWith = (fields: Record<string, string>) => {
       const req = http()
@@ -364,6 +417,34 @@ describe('IncidentsController authorization', () => {
       await req.expect(400);
 
       expect(incidentsService.createIncident).not.toHaveBeenCalled();
+    });
+
+    it('rejects more evidence files than allowed in one upload', async () => {
+      const req = http()
+        .post('/incidents/1/attachments')
+        .set('Authorization', `Bearer ${clientToken()}`);
+      for (let i = 0; i <= MAX_INCIDENT_ATTACHMENTS; i++) {
+        req.attach('attachments', png, `p${i}.png`);
+      }
+
+      await req.expect(400);
+
+      expect(incidentsService.addAttachments).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an empty message', { message: '' }],
+      ['a message of only spaces', { message: '   ' }],
+      ['a message longer than the limit', { message: 'x'.repeat(10_001) }],
+      ['a message with extra fields', { message: 'Oi', authorId: 1 }],
+    ])('rejects %s with 400', async (_name, body) => {
+      await http()
+        .post('/incidents/1/comments')
+        .set('Authorization', `Bearer ${clientToken()}`)
+        .send(body)
+        .expect(400);
+
+      expect(incidentsService.addComment).not.toHaveBeenCalled();
     });
 
     it('rejects a description longer than the column with 400 instead of failing in the database', async () => {

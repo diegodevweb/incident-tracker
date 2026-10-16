@@ -143,6 +143,19 @@ An admin opening an incident must send `companyId`; a client user always opens i
 
 With a temporary password, the only things a user can do are read `GET /account`, change the password at `POST /account/password` (current and new password; the new one follows `src/auth/password-policy.ts`) and log out. Changing the password ends the user's other sessions. `PATCH /account` changes the user's own name.
 
+### Working on an incident
+
+Both sides see the same incident page: status, corrective action, timeline, attachments and a conversation.
+
+| Action | Client user | Admin |
+| --- | --- | --- |
+| Change the status (**PATCH** `/incidents/:id` with `{ "status" }`) | Only to mark it `RESOLVED` or to reopen a resolved one (`RESOLVED` → `OPEN`) | Any status |
+| Corrective action text and corrective prints (same PATCH, `correctiveActions` and the `correctiveAttachments` files) | No (403) | Yes |
+| Attach evidence after opening (**POST** `/incidents/:id/attachments`, multipart `attachments`, up to 5 PNG/JPEG of 10 MB) | Yes | Yes |
+| Write in the conversation (**POST** `/incidents/:id/comments` with `{ "message" }`, up to 10,000 characters) | After the first message written by an admin (403 before that) | Any time |
+
+Every status change and attachment goes to the timeline with who did it. Messages cannot be edited or deleted, and each one shows its author's name and side; the client never sees an admin's e-mail.
+
 ### Creating admins
 
 The panel only creates client users, and the development seed never runs with `NODE_ENV=production`, so a new production database has no users at all. Admins, the first one included, are created with a command that talks straight to the database (`DATABASE_URL` is required) and runs from the built code:

@@ -22,6 +22,7 @@ import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
+import { CreateIncidentCommentDto } from './dto/create-incident-comment.dto';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -92,10 +93,10 @@ export class IncidentsController {
     );
   }
 
+  // Aberto ao cliente, mas só para resolver ou reabrir: o service confere.
   @Patch(':id')
   @Throttle({ default: UPLOAD_THROTTLE })
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard)
   @UseInterceptors(
     FilesInterceptor(
       'correctiveAttachments',
@@ -115,6 +116,34 @@ export class IncidentsController {
       request.user,
       correctiveAttachments,
     );
+  }
+
+  @Post(':id/attachments')
+  @Throttle({ default: UPLOAD_THROTTLE })
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FilesInterceptor(
+      'attachments',
+      MAX_INCIDENT_ATTACHMENTS,
+      uploadLimits(MAX_INCIDENT_ATTACHMENTS),
+    ),
+  )
+  addAttachments(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() attachments: UploadedAttachment[] = [],
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.addAttachments(id, attachments, request.user);
+  }
+
+  @Post(':id/comments')
+  @UseGuards(JwtAuthGuard)
+  addComment(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: CreateIncidentCommentDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.addComment(id, body, request.user);
   }
 
   @Post('preventive-actions')

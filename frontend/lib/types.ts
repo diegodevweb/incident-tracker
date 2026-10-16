@@ -43,6 +43,15 @@ export type IncidentEvent = {
   metadata?: Record<string, unknown>;
 };
 
+/** Mensagem da conversa do chamado; authorRole diz de que lado ela veio. */
+export type IncidentComment = {
+  id: number;
+  message: string;
+  createdAt: string;
+  authorName: string;
+  authorRole: UserRole;
+};
+
 export type Incident = {
   id: number;
   title: string;
@@ -59,6 +68,7 @@ export type Incident = {
   logs: IncidentLog[];
   attachments: IncidentAttachment[];
   events?: IncidentEvent[];
+  comments: IncidentComment[];
 };
 
 export type DashboardSummary = {

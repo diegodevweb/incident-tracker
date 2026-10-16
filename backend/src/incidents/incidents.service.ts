@@ -24,6 +24,7 @@ import { MonthlyReportQueryDto } from './dto/monthly-report-query.dto';
 import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
+import { CreateIncidentCommentDto } from './dto/create-incident-comment.dto';
 import { StorageService } from '../storage/storage.types';
 import { detectImageType } from '../storage/detect-image-type';
 import { truncateFilename } from './filenames';
@@ -40,6 +41,10 @@ import {
   incidentUpdateEvents,
   toPublicIncidentEvent,
 } from './incident-events';
+import {
+  INCIDENT_COMMENTS_QUERY,
+  toPublicIncidentComment,
+} from './incident-comments';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import type { AuthenticatedWebhookKey } from '../webhook-keys/webhook-keys.service';
@@ -51,14 +56,18 @@ type UploadedAttachment = {
   size: number;
 };
 
+// O detalhe do chamado: ler, criar, editar, anexar e comentar devolvem o mesmo formato.
+const INCIDENT_DETAIL_INCLUDE = {
+  company: { select: PUBLIC_COMPANY_SELECT },
+  createdBy: { select: PUBLIC_USER_SELECT },
+  attachments: true,
+  logs: { orderBy: { occurredAt: 'desc' } },
+  events: INCIDENT_EVENTS_QUERY,
+  comments: INCIDENT_COMMENTS_QUERY,
+} satisfies Prisma.IncidentInclude;
+
 type IncidentDetailRow = Prisma.IncidentGetPayload<{
-  include: {
-    company: { select: typeof PUBLIC_COMPANY_SELECT };
-    createdBy: { select: typeof PUBLIC_USER_SELECT };
-    attachments: true;
-    logs: true;
-    events: typeof INCIDENT_EVENTS_QUERY;
-  };
+  include: typeof INCIDENT_DETAIL_INCLUDE;
 }>;
 
 const toCounts = <K extends string>(
@@ -297,13 +306,7 @@ export class IncidentsService {
             ],
           },
         },
-        include: {
-          company: { select: PUBLIC_COMPANY_SELECT },
-          createdBy: { select: PUBLIC_USER_SELECT },
-          attachments: true,
-          logs: true,
-          events: INCIDENT_EVENTS_QUERY,
-        },
+        include: INCIDENT_DETAIL_INCLUDE,
       }),
     );
 
@@ -316,17 +319,7 @@ export class IncidentsService {
   async getIncident(id: number, user: JwtPayload) {
     const incident = await this.prisma.incident.findUnique({
       where: { id },
-      include: {
-        company: { select: PUBLIC_COMPANY_SELECT },
-        createdBy: { select: PUBLIC_USER_SELECT },
-        attachments: true,
-        logs: {
-          orderBy: {
-            occurredAt: 'desc',
-          },
-        },
-        events: INCIDENT_EVENTS_QUERY,
-      },
+      include: INCIDENT_DETAIL_INCLUDE,
     });
 
     if (!incident) {
@@ -513,6 +506,14 @@ export class IncidentsService {
   ) {
     const current = await this.getIncident(id, user);
 
+    if (user.role !== UserRole.ADMIN) {
+      this.assertClientUpdate(
+        current.status,
+        data,
+        correctiveAttachments.length,
+      );
+    }
+
     const uploadedCorrectiveAttachments = await this.uploadAttachments(
       correctiveAttachments,
       AttachmentCategory.CORRECTIVE_ACTION,
@@ -544,19 +545,72 @@ export class IncidentsService {
               : {}),
             ...(events.length ? { events: { create: events } } : {}),
           },
-          include: {
-            company: { select: PUBLIC_COMPANY_SELECT },
-            createdBy: { select: PUBLIC_USER_SELECT },
-            attachments: true,
-            logs: {
-              orderBy: {
-                occurredAt: 'desc',
-              },
-            },
-            events: INCIDENT_EVENTS_QUERY,
-          },
+          include: INCIDENT_DETAIL_INCLUDE,
         }),
     );
+
+    return this.presentIncidentDetail(incident);
+  }
+
+  // Evidência depois de aberto o chamado, por qualquer um que veja o chamado.
+  async addAttachments(
+    id: number,
+    attachments: UploadedAttachment[],
+    user: JwtPayload,
+  ) {
+    if (!attachments.length) {
+      throw new BadRequestException('Envie ao menos uma imagem');
+    }
+
+    await this.findAccessibleIncident(id, user);
+
+    const uploaded = await this.uploadAttachments(
+      attachments,
+      AttachmentCategory.GENERAL,
+    );
+
+    const incident = await this.withUploadCleanup(uploaded, () =>
+      this.prisma.incident.update({
+        where: { id },
+        data: {
+          attachments: { create: uploaded },
+          events: { create: attachmentAddedEvents(uploaded, user.sub) },
+        },
+        include: INCIDENT_DETAIL_INCLUDE,
+      }),
+    );
+
+    return this.presentIncidentDetail(incident);
+  }
+
+  // O admin escreve quando quiser; o cliente responde depois que um admin
+  // escreveu a primeira mensagem do chamado.
+  async addComment(
+    id: number,
+    data: CreateIncidentCommentDto,
+    user: JwtPayload,
+  ) {
+    await this.findAccessibleIncident(id, user);
+
+    if (user.role !== UserRole.ADMIN) {
+      const adminMessages = await this.prisma.incidentComment.count({
+        where: { incidentId: id, author: { role: UserRole.ADMIN } },
+      });
+
+      if (!adminMessages) {
+        throw new ForbiddenException(
+          'Você poderá responder depois da primeira resposta da equipe',
+        );
+      }
+    }
+
+    const incident = await this.prisma.incident.update({
+      where: { id },
+      data: {
+        comments: { create: { authorId: user.sub, message: data.message } },
+      },
+      include: INCIDENT_DETAIL_INCLUDE,
+    });
 
     return this.presentIncidentDetail(incident);
   }
@@ -717,6 +771,50 @@ export class IncidentsService {
     return company.id;
   }
 
+  private async findAccessibleIncident(id: number, user: JwtPayload) {
+    const incident = await this.prisma.incident.findUnique({
+      where: { id },
+      select: { id: true, companyId: true },
+    });
+
+    if (!incident) {
+      throw new NotFoundException(`Incidente não encontrado para o ID ${id}`);
+    }
+
+    this.assertIncidentAccess(incident.companyId, user);
+
+    return incident;
+  }
+
+  // O cliente confirma que o problema acabou (resolver) ou avisa que voltou
+  // (reabrir um resolvido). Ação corretiva e os status de trabalho são do admin.
+  private assertClientUpdate(
+    currentStatus: IncidentStatus,
+    data: UpdateIncidentDto,
+    correctiveAttachmentCount: number,
+  ) {
+    if (data.correctiveActions !== undefined || correctiveAttachmentCount) {
+      throw new ForbiddenException(
+        'Apenas administradores registram ação corretiva',
+      );
+    }
+
+    if (!data.status || data.status === currentStatus) {
+      return;
+    }
+
+    const resolving = data.status === IncidentStatus.RESOLVED;
+    const reopening =
+      currentStatus === IncidentStatus.RESOLVED &&
+      data.status === IncidentStatus.OPEN;
+
+    if (!resolving && !reopening) {
+      throw new ForbiddenException(
+        'Você pode marcar o chamado como resolvido ou reabrir um chamado resolvido',
+      );
+    }
+  }
+
   private assertIncidentAccess(companyId: number, user: JwtPayload) {
     if (user.role === UserRole.ADMIN) {
       return;
@@ -817,11 +915,12 @@ export class IncidentsService {
   }
 
   private async presentIncidentDetail(incident: IncidentDetailRow) {
-    const { events, ...rest } = incident;
+    const { events, comments, ...rest } = incident;
 
     return {
       ...(await this.resolveIncidentAttachmentUrls(rest)),
       events: events.map(toPublicIncidentEvent),
+      comments: comments.map(toPublicIncidentComment),
     };
   }
 

@@ -63,8 +63,9 @@ type IncidentSummary = {
 
 type IncidentDetail = IncidentSummary & {
   status: string;
-  attachments: { url: string }[];
+  attachments: { url: string; filename: string; category: string }[];
   events: { type: string; actorName: string | null }[];
+  comments: { message: string; authorName: string; authorRole: string }[];
 };
 
 type Page = { items: IncidentSummary[]; total: number };
@@ -290,7 +291,7 @@ describe('API (e2e)', () => {
     expect((await listIncidents(carla.token)).total).toBe(0);
   });
 
-  it('lets only the admin change the status, and records who did it', async () => {
+  it('keeps the work statuses with the admin, and records who changed the status', async () => {
     await http()
       .patch(`/incidents/${incidentId}`)
       .set(bearer(ana.token))
@@ -311,6 +312,110 @@ describe('API (e2e)', () => {
         actorName: admin.name,
       }),
     );
+    expect(JSON.stringify(detail)).not.toContain(admin.email);
+  });
+
+  it('lets the client resolve and reopen, but not write the corrective action', async () => {
+    await http()
+      .patch(`/incidents/${incidentId}`)
+      .set(bearer(ana.token))
+      .send({ correctiveActions: 'Reiniciei o servidor' })
+      .expect(403);
+
+    await http()
+      .patch(`/incidents/${incidentId}`)
+      .set(bearer(carla.token))
+      .send({ status: 'RESOLVED' })
+      .expect(404);
+
+    await http()
+      .patch(`/incidents/${incidentId}`)
+      .set(bearer(bruno.token))
+      .send({ status: 'RESOLVED' })
+      .expect(200);
+    expect((await getIncident(incidentId, ana.token)).events).toContainEqual(
+      expect.objectContaining({
+        type: 'INCIDENT_RESOLVED',
+        actorName: bruno.name,
+      }),
+    );
+
+    await http()
+      .patch(`/incidents/${incidentId}`)
+      .set(bearer(ana.token))
+      .send({ status: 'OPEN' })
+      .expect(200);
+
+    const detail = await getIncident(incidentId, admin.token);
+    expect(detail.status).toBe('OPEN');
+    expect(detail.events).toContainEqual(
+      expect.objectContaining({ type: 'STATUS_CHANGED', actorName: ana.name }),
+    );
+  });
+
+  it('lets the client attach evidence after opening the incident', async () => {
+    await http()
+      .post(`/incidents/${incidentId}/attachments`)
+      .set(bearer(carla.token))
+      .attach('attachments', png, {
+        filename: 'intrusa.png',
+        contentType: 'image/png',
+      })
+      .expect(404);
+
+    const updated = bodyOf<IncidentDetail>(
+      await http()
+        .post(`/incidents/${incidentId}/attachments`)
+        .set(bearer(bruno.token))
+        .attach('attachments', png, {
+          filename: 'de-novo.png',
+          contentType: 'image/png',
+        })
+        .expect(201),
+    );
+
+    const evidence = updated.attachments.find(
+      (attachment) => attachment.filename === 'de-novo.png',
+    );
+    expect(evidence).toMatchObject({ category: 'GENERAL' });
+    expect(updated.attachments).toHaveLength(2);
+    expect(updated.events).toContainEqual(
+      expect.objectContaining({
+        type: 'ATTACHMENT_ADDED',
+        actorName: bruno.name,
+      }),
+    );
+
+    const download = await fetch(evidence!.url);
+    expect(download.status).toBe(200);
+  });
+
+  it('lets the client reply only after the first admin message', async () => {
+    const write = (token: string, message: string) =>
+      http()
+        .post(`/incidents/${incidentId}/comments`)
+        .set(bearer(token))
+        .send({ message });
+
+    await write(ana.token, 'Alguma novidade?').expect(403);
+    await write(carla.token, 'Oi').expect(404);
+    await write(admin.token, 'Estamos verificando').expect(201);
+    await write(carla.token, 'Oi').expect(404);
+    await write(bruno.token, 'Voltou a acontecer agora há pouco').expect(201);
+
+    const detail = await getIncident(incidentId, ana.token);
+    expect(detail.comments).toEqual([
+      expect.objectContaining({
+        message: 'Estamos verificando',
+        authorName: admin.name,
+        authorRole: 'ADMIN',
+      }),
+      expect.objectContaining({
+        message: 'Voltou a acontecer agora há pouco',
+        authorName: bruno.name,
+        authorRole: 'CLIENT',
+      }),
+    ]);
     expect(JSON.stringify(detail)).not.toContain(admin.email);
   });
 

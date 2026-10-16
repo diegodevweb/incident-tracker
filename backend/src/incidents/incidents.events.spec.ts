@@ -72,6 +72,7 @@ describe('IncidentsService audit events', () => {
     attachments: [],
     logs: [],
     events: [],
+    comments: [],
     ...overrides,
   });
 

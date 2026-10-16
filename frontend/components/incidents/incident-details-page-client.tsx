@@ -8,6 +8,8 @@ import { Topbar } from "@/components/dashboard/topbar";
 import { fetchIncident } from "@/lib/api";
 import { getInitials } from "@/lib/session";
 import type { Incident } from "@/lib/types";
+import { IncidentAttachments } from "./incident-attachments";
+import { IncidentConversation } from "./incident-conversation";
 import { IncidentDetails } from "./incident-details";
 import { IncidentManagementPanel } from "./incident-management-panel";
 import { IncidentTimeline } from "./incident-timeline";
@@ -73,7 +75,17 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
           </div>
         ) : (
           <>
-            <IncidentDetails incident={incident} role={activeRole} />
+            <IncidentDetails
+              incident={incident}
+              role={activeRole}
+              onUpdated={setIncident}
+            />
+
+            <IncidentConversation
+              incident={incident}
+              role={activeRole}
+              onUpdated={setIncident}
+            />
 
             <IncidentTimeline incident={incident} />
 
@@ -85,37 +97,7 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
               />
             </div>
 
-            <aside className="app-surface card border">
-              <div className="card-body">
-                <h3 className="text-lg font-semibold">Prints e anexos</h3>
-                <p className="text-sm text-base-content/60">
-                  Evidências gerais e anexos cadastrados para o chamado.
-                </p>
-
-                {incident.attachments.length ? (
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    {incident.attachments.map((attachment) => (
-                      <a
-                        key={attachment.id}
-                        href={attachment.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="app-surface-muted rounded-2xl border p-4"
-                      >
-                        <p className="font-medium">{attachment.filename}</p>
-                        <p className="mt-1 text-sm text-base-content/60">
-                          {attachment.mimeType}
-                        </p>
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="app-surface-muted mt-4 rounded-2xl border border-dashed p-5 text-sm text-base-content/60">
-                    Nenhum arquivo anexado.
-                  </div>
-                )}
-              </div>
-            </aside>
+            <IncidentAttachments incident={incident} onUpdated={setIncident} />
           </>
         )}
       </div>
