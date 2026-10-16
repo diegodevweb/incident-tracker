@@ -1,20 +1,16 @@
-name: Deploy
+name: Deploy (PROD)
 
-# Depois que o CI passa num push para a main, atualiza a produção para aquele
-# commit (deploy/deploy.sh no servidor: backup, build, subida e volta à versão
-# anterior se não ficar saudável). Também roda à mão: Actions > Deploy > Run
-# workflow, que leva a produção ao topo da main.
+# Publica a main em produção quando você clica em Actions > Deploy (PROD) >
+# Run workflow. Antes, espera o CI daquele commit terminar e só segue se ele
+# passou. No servidor, deploy/deploy.sh faz o backup do banco, o build, a
+# subida e volta à versão anterior se a nova não ficar saudável.
 #
-# Enquanto o ambiente "production" não tiver os segredos DEPLOY_*, o job só
-# avisa que o deploy não está configurado e termina sem erro.
+# Enquanto os segredos DEPLOY_* não existirem, o job só avisa e termina.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
 
-permissions: {}
+permissions:
+  actions: read
 
 # Um deploy por vez, e nenhum cancelado no meio.
 concurrency:
@@ -24,27 +20,44 @@ concurrency:
 jobs:
   deploy:
     name: Produção
-    # Só o push na main deste repositório: um PR de fork com uma branch
-    # chamada main também dispara o CI, mas com outro evento e outro repositório.
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: production
     steps:
+      - name: Só a main vai para produção
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Escolha a branch main em \"Use workflow from\"."
+          exit 1
+
       - name: Deploy configurado?
         id: config
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           if [ -z "$DEPLOY_HOST" ]; then
-            echo "::notice::Deploy automático não configurado: faltam os segredos DEPLOY_* no ambiente production. Nada foi feito."
+            echo "::notice::Deploy não configurado: faltam os segredos DEPLOY_* do repositório. Nada foi feito."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: CI deste commit passou?
+        if: steps.config.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          run_id=$(gh run list --workflow CI --commit "$COMMIT" --event push --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            echo "::error::Não há execução do CI para ${COMMIT:0:7} na main."
+            exit 1
+          fi
+          # Se o CI ainda está rodando, espera; falha se ele falhou ou foi cancelado.
+          if ! gh run watch "$run_id" --exit-status --interval 15 > /dev/null; then
+            echo "::error::O CI de ${COMMIT:0:7} não passou; nada foi publicado."
+            exit 1
           fi
 
       - name: Atualiza o servidor
@@ -54,8 +67,7 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          # O commit que o CI testou (no disparo manual, o topo da main).
-          COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+          COMMIT: ${{ github.sha }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
