@@ -65,7 +65,9 @@ export function IncidentManagementPanel({
         <div>
           <h3 className="text-lg font-semibold">Gestão do chamado</h3>
           <p className="text-sm text-base-content/60">
-            Atualize status, descreva a ação corretiva executada e relacione prints da solução.
+            {readOnly
+              ? "Status e ação corretiva registrados pela equipe de suporte."
+              : "Atualize status, descreva a ação corretiva executada e relacione prints da solução."}
           </p>
         </div>
 
@@ -73,7 +75,8 @@ export function IncidentManagementPanel({
           <label className="form-control">
             <span className="label-text mb-2">Status do chamado</span>
             <select
-              value={status}
+              // O cliente muda o status por fora deste painel (resolver/reabrir).
+              value={readOnly ? incident.status : status}
               onChange={(event) => setStatus(event.target.value as IncidentStatus)}
               className="select select-bordered w-full"
               disabled={readOnly}

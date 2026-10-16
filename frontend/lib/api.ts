@@ -5,6 +5,7 @@ import type {
   CompanyListPage,
   CompanyUser,
   Incident,
+  IncidentComment,
   IncidentEnvironment,
   IncidentEvent,
   IncidentLevel,
@@ -53,6 +54,7 @@ type BackendIncident = {
     actorName?: string | null;
     metadata?: Record<string, unknown> | null;
   }[];
+  comments?: IncidentComment[];
 };
 
 /**
@@ -154,6 +156,7 @@ function mapIncident(incident: BackendIncident): Incident {
       actorName: event.actorName ?? undefined,
       metadata: event.metadata ?? undefined,
     })),
+    comments: incident.comments ?? [],
   };
 }
 
@@ -263,6 +266,31 @@ export async function updateIncident(
   const data = await apiFetch<BackendIncident>(`/incidents/${id}`, {
     method: "PATCH",
     body,
+  });
+
+  return mapIncident(data);
+}
+
+/** Evidência depois de aberto o chamado (até 5 imagens por envio). */
+export async function addIncidentAttachments(id: number, files: File[]) {
+  const formData = new FormData();
+
+  files.forEach((file) => {
+    formData.append("attachments", file);
+  });
+
+  const data = await apiFetch<BackendIncident>(`/incidents/${id}/attachments`, {
+    method: "POST",
+    body: formData,
+  });
+
+  return mapIncident(data);
+}
+
+export async function addIncidentComment(id: number, message: string) {
+  const data = await apiFetch<BackendIncident>(`/incidents/${id}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
   });
 
   return mapIncident(data);
