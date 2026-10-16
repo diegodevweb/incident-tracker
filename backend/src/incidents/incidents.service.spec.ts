@@ -3,11 +3,19 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { IncidentStatus, UserRole } from '@prisma/client';
+import { IncidentLevel, IncidentStatus, UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.types';
 import { IncidentsService } from './incidents.service';
+
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+const png = (originalname: string) => ({
+  buffer: PNG,
+  originalname,
+  mimetype: 'image/png',
+  size: PNG.length,
+});
 
 describe('IncidentsService access rules', () => {
   const admin: JwtPayload = {
@@ -40,6 +48,7 @@ describe('IncidentsService access rules', () => {
     };
     company: { findUnique: jest.Mock };
   };
+  let storage: { uploadObject: jest.Mock };
   let service: IncidentsService;
 
   beforeEach(() => {
@@ -64,9 +73,14 @@ describe('IncidentsService access rules', () => {
         ),
       },
     };
+    storage = {
+      uploadObject: jest.fn(({ key }: { key: string }) =>
+        Promise.resolve({ key }),
+      ),
+    };
     service = new IncidentsService(
       prisma as unknown as PrismaService,
-      {} as StorageService,
+      storage as unknown as StorageService,
     );
   });
 
@@ -97,7 +111,9 @@ describe('IncidentsService access rules', () => {
       title: 'Erro na emissão',
       description: 'Nota rejeitada',
       environment: 'production',
+      priority: IncidentLevel.ERROR,
     };
+    const evidence = [png('tela.png')];
 
     it('rejects a CLIENT that tries to set the status', async () => {
       await expect(
@@ -112,7 +128,7 @@ describe('IncidentsService access rules', () => {
     });
 
     it("opens a CLIENT's ticket as OPEN, in the user's company, recording who opened it", async () => {
-      await service.createIncident(body, [], client);
+      await service.createIncident(body, evidence, client);
 
       expect(createdData()).toMatchObject({
         status: IncidentStatus.OPEN,
@@ -122,7 +138,11 @@ describe('IncidentsService access rules', () => {
     });
 
     it('ignores a companyId sent by a CLIENT', async () => {
-      await service.createIncident({ ...body, companyId: 99 }, [], client);
+      await service.createIncident(
+        { ...body, companyId: 99 },
+        evidence,
+        client,
+      );
 
       expect(createdData().companyId).toBe(7);
       expect(prisma.company.findUnique).not.toHaveBeenCalled();
@@ -160,9 +180,46 @@ describe('IncidentsService access rules', () => {
 
     it('refuses a CLIENT token without a company', async () => {
       await expect(
-        service.createIncident(body, [], { ...client, companyId: null }),
+        service.createIncident(body, evidence, { ...client, companyId: null }),
       ).rejects.toThrow(ForbiddenException);
       expect(prisma.incident.create).not.toHaveBeenCalled();
+    });
+
+    it('requires a CLIENT to choose the priority', async () => {
+      await expect(
+        service.createIncident(
+          { ...body, priority: undefined },
+          evidence,
+          client,
+        ),
+      ).rejects.toThrow('Informe a criticidade do chamado');
+      expect(storage.uploadObject).not.toHaveBeenCalled();
+      expect(prisma.incident.create).not.toHaveBeenCalled();
+    });
+
+    it('requires a CLIENT to send at least one print', async () => {
+      await expect(service.createIncident(body, [], client)).rejects.toThrow(
+        'Anexe ao menos um print do problema',
+      );
+      expect(prisma.incident.create).not.toHaveBeenCalled();
+    });
+
+    it('lets an ADMIN open without a print or a priority', async () => {
+      await service.createIncident(
+        {
+          companyId: 99,
+          title: body.title,
+          description: body.description,
+          environment: body.environment,
+        },
+        [],
+        admin,
+      );
+
+      expect(createdData()).toMatchObject({
+        companyId: 99,
+        priority: IncidentLevel.ERROR,
+      });
     });
   });
 

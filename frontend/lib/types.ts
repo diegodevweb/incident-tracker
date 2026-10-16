@@ -33,7 +33,8 @@ export type IncidentEventType =
   | "CORRECTIVE_ACTION_REMOVED"
   | "ATTACHMENT_ADDED"
   | "LOG_REGISTERED"
-  | "INCIDENT_RESOLVED";
+  | "INCIDENT_RESOLVED"
+  | "PRIORITY_CHANGED";
 
 export type IncidentEvent = {
   id: number;
@@ -69,6 +70,27 @@ export type Incident = {
   attachments: IncidentAttachment[];
   events?: IncidentEvent[];
   comments: IncidentComment[];
+};
+
+export type NotificationType =
+  | "STATUS_CHANGED"
+  | "PRIORITY_CHANGED"
+  | "COMMENT_ADDED"
+  | "CORRECTIVE_ACTION_UPDATED";
+
+/** Aviso ao cliente sobre o que a equipe fez num chamado da empresa dele. */
+export type AppNotification = {
+  id: number;
+  type: NotificationType;
+  metadata: Record<string, unknown> | null;
+  readAt: string | null;
+  createdAt: string;
+  incident: { id: number; title: string; source: IncidentSource };
+};
+
+export type NotificationList = {
+  unreadCount: number;
+  items: AppNotification[];
 };
 
 export type DashboardSummary = {

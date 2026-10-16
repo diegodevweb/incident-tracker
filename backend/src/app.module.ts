@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { AccountModule } from './account/account.module';
 import { CompaniesModule } from './companies/companies.module';
 import { HealthModule } from './health/health.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { StorageModule } from './storage/storage.module';
 import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
 @Module({
@@ -22,6 +23,7 @@ import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
     AccountModule,
     CompaniesModule,
     HealthModule,
+    NotificationsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

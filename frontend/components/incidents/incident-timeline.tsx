@@ -1,7 +1,13 @@
 "use client";
 
-import { incidentStatusLabel } from "@/lib/labels";
-import type { Incident, IncidentEvent, IncidentStatus } from "@/lib/types";
+import { getIncidentPriorityLabel, incidentStatusLabel } from "@/lib/labels";
+import type {
+  Incident,
+  IncidentEvent,
+  IncidentLevel,
+  IncidentSource,
+  IncidentStatus,
+} from "@/lib/types";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", {
@@ -18,7 +24,15 @@ function getStatusLabel(value: unknown) {
   return incidentStatusLabel[value as IncidentStatus] ?? value;
 }
 
-function getEventContent(event: IncidentEvent) {
+function getPriorityLabel(value: unknown, source: IncidentSource) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return getIncidentPriorityLabel(value as IncidentLevel, source) ?? value;
+}
+
+function getEventContent(event: IncidentEvent, source: IncidentSource) {
   const metadata = event.metadata ?? {};
 
   switch (event.type) {
@@ -38,6 +52,19 @@ function getEventContent(event: IncidentEvent) {
           fromStatus && toStatus
             ? `Mudança de ${fromStatus.toLowerCase()} para ${toStatus.toLowerCase()}.`
             : "Fluxo do atendimento avançou para uma nova etapa.",
+        metadata: null,
+      };
+    }
+    case "PRIORITY_CHANGED": {
+      const fromPriority = getPriorityLabel(metadata.fromPriority, source);
+      const toPriority = getPriorityLabel(metadata.toPriority, source);
+
+      return {
+        title: "Criticidade alterada",
+        description:
+          fromPriority && toPriority
+            ? `Mudança de ${fromPriority.toLowerCase()} para ${toPriority.toLowerCase()}.`
+            : "A equipe ajustou a criticidade do chamado.",
         metadata: null,
       };
     }
@@ -155,7 +182,11 @@ export function IncidentTimeline({
       },
     }));
 
-  const logEvents = incident.logs
+  // Só o webhook manda log técnico. No chamado aberto pelo painel, o log gravado
+  // na criação repete a descrição, que já aparece no topo da página.
+  const technicalLogs = incident.source === "WEBHOOK" ? incident.logs : [];
+
+  const logEvents = technicalLogs
     .filter(
       (log) =>
         !baseEvents.some(
@@ -195,7 +226,7 @@ export function IncidentTimeline({
         {orderedEvents.length ? (
           <div className="space-y-4">
             {orderedEvents.map((event, index) => {
-              const content = getEventContent(event);
+              const content = getEventContent(event, incident.source);
 
               return (
                 <article

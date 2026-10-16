@@ -248,6 +248,16 @@ describe('API (e2e)', () => {
   });
 
   it('stores an uploaded print and serves it back through a signed URL', async () => {
+    // O cliente não abre chamado sem print.
+    await http()
+      .post('/incidents')
+      .set(bearer(ana.token))
+      .field('title', 'Falha ao emitir nota')
+      .field('description', 'Erro 500 ao confirmar a emissão')
+      .field('environment', 'production')
+      .field('priority', 'ERROR')
+      .expect(400);
+
     const { data: created } = bodyOf<{ data: IncidentSummary }>(
       await http()
         .post('/incidents')
@@ -255,6 +265,7 @@ describe('API (e2e)', () => {
         .field('title', 'Falha ao emitir nota')
         .field('description', 'Erro 500 ao confirmar a emissão')
         .field('environment', 'production')
+        .field('priority', 'ERROR')
         .attach('attachments', png, {
           filename: 'print.png',
           contentType: 'image/png',
@@ -417,6 +428,58 @@ describe('API (e2e)', () => {
       }),
     ]);
     expect(JSON.stringify(detail)).not.toContain(admin.email);
+  });
+
+  it('tells the users of the company what the admin did, each one marking their own as read', async () => {
+    type NotificationList = {
+      unreadCount: number;
+      items: {
+        type: string;
+        incident: { id: number; title: string; source: string };
+      }[];
+    };
+    const notificationsOf = async (token: string) =>
+      bodyOf<NotificationList>(
+        await http().get('/notifications').set(bearer(token)).expect(200),
+      );
+
+    await http()
+      .patch(`/incidents/${incidentId}`)
+      .set(bearer(ana.token))
+      .send({ priority: 'CRITICAL' })
+      .expect(403);
+    await http()
+      .patch(`/incidents/${incidentId}`)
+      .set(bearer(admin.token))
+      .send({ priority: 'CRITICAL' })
+      .expect(200);
+
+    // Status em andamento, a mensagem e a criticidade, todos pelo admin. O que
+    // os próprios clientes fizeram (resolver, reabrir, responder) não avisa.
+    const seenByBruno = await notificationsOf(bruno.token);
+    expect(seenByBruno.unreadCount).toBe(3);
+    expect(seenByBruno.items.map((item) => item.type)).toEqual([
+      'PRIORITY_CHANGED',
+      'COMMENT_ADDED',
+      'STATUS_CHANGED',
+    ]);
+    expect(seenByBruno.items[0].incident).toEqual({
+      id: incidentId,
+      title: 'Falha ao emitir nota',
+      source: 'DASHBOARD',
+    });
+    expect((await notificationsOf(carla.token)).items).toEqual([]);
+    expect((await notificationsOf(admin.token)).items).toEqual([]);
+
+    const marked = bodyOf<{ unreadCount: number }>(
+      await http()
+        .post('/notifications/read')
+        .set(bearer(bruno.token))
+        .send({ incidentId })
+        .expect(200),
+    );
+    expect(marked.unreadCount).toBe(0);
+    expect((await notificationsOf(ana.token)).unreadCount).toBe(3);
   });
 
   it("opens incidents from the webhook for the key's company", async () => {

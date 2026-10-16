@@ -1,6 +1,7 @@
 import {
   AttachmentCategory,
   IncidentEventType,
+  IncidentLevel,
   IncidentStatus,
 } from '@prisma/client';
 import { incidentUpdateEvents, toPublicIncidentEvent } from './incident-events';
@@ -8,6 +9,7 @@ import { incidentUpdateEvents, toPublicIncidentEvent } from './incident-events';
 describe('incidentUpdateEvents', () => {
   const current = {
     status: IncidentStatus.OPEN,
+    priority: IncidentLevel.ERROR,
     correctiveActions: null as string | null,
   };
   const actorId = 7;
@@ -17,6 +19,7 @@ describe('incidentUpdateEvents', () => {
       incidentUpdateEvents({
         current,
         status: IncidentStatus.OPEN,
+        priority: IncidentLevel.ERROR,
         correctiveActions: null,
         attachments: [],
         actorId,
@@ -49,6 +52,26 @@ describe('incidentUpdateEvents', () => {
         metadata: {
           fromStatus: IncidentStatus.OPEN,
           toStatus: IncidentStatus.IN_PROGRESS,
+        },
+      },
+    ]);
+  });
+
+  it('records a priority change with the previous and the new priority', () => {
+    expect(
+      incidentUpdateEvents({
+        current,
+        priority: IncidentLevel.CRITICAL,
+        attachments: [],
+        actorId,
+      }),
+    ).toEqual([
+      {
+        type: IncidentEventType.PRIORITY_CHANGED,
+        actorId,
+        metadata: {
+          fromPriority: IncidentLevel.ERROR,
+          toPriority: IncidentLevel.CRITICAL,
         },
       },
     ]);

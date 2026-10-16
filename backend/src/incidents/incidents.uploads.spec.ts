@@ -40,6 +40,7 @@ describe('IncidentsService uploads', () => {
       findUnique: jest.Mock;
     };
     company: { findUnique: jest.Mock };
+    user: { findMany: jest.Mock };
   };
   let storage: {
     uploadObject: jest.Mock;
@@ -66,6 +67,7 @@ describe('IncidentsService uploads', () => {
         findUnique: jest.fn().mockResolvedValue(incidentRow),
       },
       company: { findUnique: jest.fn().mockResolvedValue({ id: 1 }) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
     };
     storage = {
       uploadObject: jest.fn(({ key }: { key: string }) =>

@@ -15,6 +15,7 @@ import {
   IncidentLevel,
   IncidentSource,
   IncidentStatus,
+  NotificationType,
   Prisma,
   UserRole,
 } from '@prisma/client';
@@ -45,6 +46,10 @@ import {
   INCIDENT_COMMENTS_QUERY,
   toPublicIncidentComment,
 } from './incident-comments';
+import {
+  type IncidentNotice,
+  noticesForIncidentUpdate,
+} from './incident-notifications';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import type { AuthenticatedWebhookKey } from '../webhook-keys/webhook-keys.service';
@@ -122,6 +127,11 @@ export class IncidentsService {
             ? 'Problemas que exigem atenção, porém com fluxo alternativo possível.'
             : 'Solicitações sem indisponibilidade e com baixo impacto operacional.',
   }));
+
+  /** O que cada criticidade quer dizer e o prazo de primeira resposta. */
+  getSlaRules() {
+    return this.slaRules;
+  }
 
   private buildPeriodLabel(startDate: Date, endDate: Date) {
     const sameMonth =
@@ -263,6 +273,11 @@ export class IncidentsService {
 
     // A empresa é conferida antes do upload: um 400 aqui não deixa arquivo órfão.
     const companyId = await this.resolveCompanyId(user, data.companyId);
+
+    if (user.role !== UserRole.ADMIN) {
+      this.assertClientEvidence(data, attachments.length);
+    }
+
     const generalAttachments = await this.uploadAttachments(
       attachments,
       AttachmentCategory.GENERAL,
@@ -527,6 +542,7 @@ export class IncidentsService {
     const events = incidentUpdateEvents({
       current,
       status: data.status,
+      priority: data.priority,
       correctiveActions,
       attachments: uploadedCorrectiveAttachments,
       actorId: user.sub,
@@ -534,16 +550,22 @@ export class IncidentsService {
 
     const incident = await this.withUploadCleanup(
       uploadedCorrectiveAttachments,
-      () =>
+      async () =>
         this.prisma.incident.update({
           where: { id },
           data: {
             ...(data.status ? { status: data.status } : {}),
+            ...(data.priority ? { priority: data.priority } : {}),
             ...(correctiveActions !== undefined ? { correctiveActions } : {}),
             ...(uploadedCorrectiveAttachments.length
               ? { attachments: { create: uploadedCorrectiveAttachments } }
               : {}),
             ...(events.length ? { events: { create: events } } : {}),
+            ...(await this.companyNoticesWrite(
+              current.companyId,
+              user,
+              noticesForIncidentUpdate(events),
+            )),
           },
           include: INCIDENT_DETAIL_INCLUDE,
         }),
@@ -590,7 +612,7 @@ export class IncidentsService {
     data: CreateIncidentCommentDto,
     user: JwtPayload,
   ) {
-    await this.findAccessibleIncident(id, user);
+    const { companyId } = await this.findAccessibleIncident(id, user);
 
     if (user.role !== UserRole.ADMIN) {
       const adminMessages = await this.prisma.incidentComment.count({
@@ -608,6 +630,9 @@ export class IncidentsService {
       where: { id },
       data: {
         comments: { create: { authorId: user.sub, message: data.message } },
+        ...(await this.companyNoticesWrite(companyId, user, [
+          { type: NotificationType.COMMENT_ADDED },
+        ])),
       },
       include: INCIDENT_DETAIL_INCLUDE,
     });
@@ -799,6 +824,12 @@ export class IncidentsService {
       );
     }
 
+    if (data.priority !== undefined) {
+      throw new ForbiddenException(
+        'Apenas administradores mudam a criticidade do chamado',
+      );
+    }
+
     if (!data.status || data.status === currentStatus) {
       return;
     }
@@ -813,6 +844,53 @@ export class IncidentsService {
         'Você pode marcar o chamado como resolvido ou reabrir um chamado resolvido',
       );
     }
+  }
+
+  // Quem abre o chamado pelo painel é quem mais sabe do problema: o cliente
+  // escolhe a criticidade e manda ao menos um print. O admin abre em nome dele
+  // e pode não ter as evidências na mão.
+  private assertClientEvidence(
+    data: CreateIncidentDto,
+    attachmentCount: number,
+  ) {
+    if (!data.priority) {
+      throw new BadRequestException('Informe a criticidade do chamado');
+    }
+
+    if (!attachmentCount) {
+      throw new BadRequestException('Anexe ao menos um print do problema');
+    }
+  }
+
+  // Avisa todos os usuários ativos da empresa, gravando junto com a mudança
+  // (escrita aninhada). Só ação de admin avisa: o que o cliente fez ele já sabe.
+  private async companyNoticesWrite(
+    companyId: number,
+    user: JwtPayload,
+    notices: IncidentNotice[],
+  ): Promise<Pick<Prisma.IncidentUpdateInput, 'notifications'>> {
+    if (user.role !== UserRole.ADMIN || !notices.length) {
+      return {};
+    }
+
+    const recipients = await this.prisma.user.findMany({
+      where: { companyId, role: UserRole.CLIENT, disabledAt: null },
+      select: { id: true },
+    });
+
+    if (!recipients.length) {
+      return {};
+    }
+
+    return {
+      notifications: {
+        createMany: {
+          data: recipients.flatMap(({ id: userId }) =>
+            notices.map((notice) => ({ userId, ...notice })),
+          ),
+        },
+      },
+    };
   }
 
   private assertIncidentAccess(companyId: number, user: JwtPayload) {

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
-import { fetchIncident } from "@/lib/api";
+import { fetchIncident, markNotificationsRead } from "@/lib/api";
+import { announceNotificationsChanged } from "@/lib/notifications";
 import { getInitials } from "@/lib/session";
 import type { Incident } from "@/lib/types";
 import { IncidentAttachments } from "./incident-attachments";
@@ -44,6 +45,19 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
       })
       .finally(() => {
         setIsLoading(false);
+      });
+  }, [id, session]);
+
+  // Abrir o chamado dá por vistos os avisos dele.
+  useEffect(() => {
+    if (session?.user.role !== "CLIENT") {
+      return;
+    }
+
+    void markNotificationsRead(id)
+      .then(announceNotificationsChanged)
+      .catch(() => {
+        // Sem marcar, o aviso só continua no sino.
       });
   }, [id, session]);
 

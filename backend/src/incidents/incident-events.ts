@@ -1,6 +1,7 @@
 import {
   AttachmentCategory,
   IncidentEventType,
+  IncidentLevel,
   IncidentStatus,
   Prisma,
 } from '@prisma/client';
@@ -57,8 +58,13 @@ export function attachmentAddedEvents(
  * enviado com o mesmo valor não gera evento.
  */
 export function incidentUpdateEvents(input: {
-  current: { status: IncidentStatus; correctiveActions: string | null };
+  current: {
+    status: IncidentStatus;
+    priority: IncidentLevel;
+    correctiveActions: string | null;
+  };
   status?: IncidentStatus;
+  priority?: IncidentLevel;
   correctiveActions?: string | null;
   attachments: AddedAttachment[];
   actorId: number;
@@ -75,6 +81,14 @@ export function incidentUpdateEvents(input: {
           : IncidentEventType.STATUS_CHANGED,
       actorId,
       metadata: { fromStatus: current.status, toStatus: input.status },
+    });
+  }
+
+  if (input.priority && input.priority !== current.priority) {
+    events.push({
+      type: IncidentEventType.PRIORITY_CHANGED,
+      actorId,
+      metadata: { fromPriority: current.priority, toPriority: input.priority },
     });
   }
 
