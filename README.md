@@ -220,6 +220,8 @@ Unit tests need no database. The e2e suite (`npm run test:e2e`) boots the whole 
 * **Backend e2e:** applies every migration from scratch on MySQL 8, checks that the migrations match `schema.prisma`, then runs the e2e suite with SeaweedFS as S3
 * **Frontend:** lint and production build
 
+`.github/workflows/deploy.yml` then deploys each push to `main` that passed CI (see [Automatic deploys](#automatic-deploys)).
+
 ---
 
 ## Deployment
@@ -299,11 +301,29 @@ It asks for the password in the terminal (see [Creating admins](#creating-admins
 * The webhook answers `201` with a company key and `401` without it
 * `https://<your domain>/health` shows the panel's "not found" page: the API itself is not reachable from the internet, only the three webhook routes are
 
+**8. Turn on automatic deploys**
+
+1. On the server, as the user that owns the clone (not root), run once:
+
+   ```bash
+   deploy/setup-auto-deploy.sh <your domain>
+   ```
+
+   It creates an SSH key that can only run `deploy/deploy.sh` (no shell, no forwarding) and prints the values for GitHub. If SSH listens on another port, pass it as a second argument
+2. On GitHub, under **Settings → Environments**, create the `production` environment and add each printed value as an environment secret with the same name: `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_SSH_KEY` (with its `BEGIN` and `END` lines) and, if printed, `DEPLOY_PORT`. Then clear the server's terminal
+3. Run **Actions → Deploy → Run workflow** once and check that it ends green
+
+#### Automatic deploys
+
+`.github/workflows/deploy.yml` runs after CI passes on a push to `main` and calls `deploy/deploy.sh` on the server with that commit (see Update below for what the script does). A deploy that fails rolls back by itself and turns the run red, and GitHub e-mails whoever merged. Deploys never run at the same time, and an older commit is never deployed over a newer one when merges land close together. **Actions → Deploy → Run workflow** deploys the latest `main` on demand.
+
+Until the `DEPLOY_*` secrets exist, the workflow only logs a notice and does nothing. Running `deploy/setup-auto-deploy.sh` again replaces the key (update `DEPLOY_SSH_KEY` afterwards); deleting the `DEPLOY_HOST` secret turns automatic deploys off.
+
 #### Day to day
 
 **Status and logs.** `docker compose -f docker-compose.prod.yml ps` shows the state, and `docker compose -f docker-compose.prod.yml logs -f --tail=100 api` follows a service (`web`, `caddy` and `mysql` work the same way). Docker keeps three 10 MB log files per service.
 
-**Backup.** Run this before every update and copy the file off the server:
+**Backup.** Every deploy makes one first (see Update). For one at any other time, run this and copy the file off the server:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T mysql sh -c 'MYSQL_PWD=$MYSQL_ROOT_PASSWORD mysqldump -uroot --single-transaction --routines "$MYSQL_DATABASE"' | gzip > backup-$(date +%F).sql.gz
@@ -321,18 +341,23 @@ docker compose -f docker-compose.prod.yml up -d
 
 On a new server, bring up only the database first (`docker compose -f docker-compose.prod.yml up -d mysql`), restore with the second command, then run `up -d --build` for the rest. The migrations are in the backup, so `migrate` finds nothing left to apply.
 
-**Update.** New migrations are applied automatically, so take a backup first. Keep the running images as `previous` only while the running version is one you trust, then build and restart:
+**Update.** Merging into `main` deploys by itself once CI passes (see [Automatic deploys](#automatic-deploys)). By hand, on the server:
 
 ```bash
-git pull --ff-only
-for s in api web migrate; do docker tag incident-tracker-prod-$s incident-tracker-prod-$s:previous; done
-docker compose -f docker-compose.prod.yml build --pull
-docker compose -f docker-compose.prod.yml up -d
+deploy/deploy.sh
 ```
 
-The API and the panel are down for a few seconds while they are recreated. Then check `ps`, the logs and a sign-in. `--pull` refreshes the base images of the API and the panel so they get their security fixes; do it now and then even without a new version. The `mysql` and `caddy` images are not built here: `docker compose -f docker-compose.prod.yml pull` fetches newer ones and `up -d` applies them (back up first, since a MySQL update runs on start).
+Without an argument it deploys the latest `main` from GitHub; `deploy/deploy.sh <full commit SHA>` deploys a given commit of `main`. The script:
 
-**Roll back.** Put the previous images back and restart without building:
+1. Refuses to run if the server has local changes to tracked files, if `.env` is incomplete, or if another deploy is running (it waits up to 30 minutes for it)
+2. Backs up the database to `~/backups/pre-deploy-<date>-<commit>.sql.gz` and keeps the last 10 of these (`DEPLOY_BACKUP_DIR` and `DEPLOY_KEEP_BACKUPS` change that)
+3. Keeps the running images as `previous`, if they are healthy
+4. Checks out the commit, builds with `--pull`, runs `up -d` and waits up to 5 minutes (`DEPLOY_WAIT_TIMEOUT`) for the health checks. New migrations are applied on the way
+5. If the new version does not come up healthy, puts the previous code and images back, prints `ps` and the logs, and exits with an error
+
+The API and the panel are down for a few seconds while they are recreated. It does not go back to an older commit than the one running (with `DEPLOY_ALLOW_OLDER=1` it does). `--pull` refreshes the base images of the API and the panel so they get their security fixes; run `deploy/deploy.sh` now and then even without a new version. The `mysql` and `caddy` images are not built here: `docker compose -f docker-compose.prod.yml pull` fetches newer ones and `up -d` applies them (back up first, since a MySQL update runs on start).
+
+**Roll back.** A deploy that fails rolls back by itself. To leave a version that came up healthy but misbehaves, deploy the earlier commit (`DEPLOY_ALLOW_OLDER=1 deploy/deploy.sh <commit>`), or put the previous images back and restart without building:
 
 ```bash
 for s in api web migrate; do docker tag incident-tracker-prod-$s:previous incident-tracker-prod-$s:latest; done
