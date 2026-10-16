@@ -48,6 +48,7 @@ describe('IncidentsService audit events', () => {
       update: jest.Mock;
     };
     company: { findUnique: jest.Mock };
+    user: { findMany: jest.Mock };
   };
   let storage: {
     uploadObject: jest.Mock;
@@ -87,6 +88,7 @@ describe('IncidentsService audit events', () => {
         update: jest.fn().mockResolvedValue(incidentRow()),
       },
       company: { findUnique: jest.fn().mockResolvedValue({ id: 2 }) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
     };
     storage = {
       uploadObject: jest.fn(({ key }: { key: string }) =>
@@ -109,19 +111,19 @@ describe('IncidentsService audit events', () => {
       title: 'Erro na emissão',
       description: 'Nota rejeitada',
       environment: 'production',
+      priority: IncidentLevel.ERROR,
     };
 
     it('records who created it, in the same write as the incident', async () => {
-      await service.createIncident(body, [], client);
+      await service.createIncident(body, [png('tela.png')], client);
 
-      expect(lastWrite(prisma.incident.create).data.events).toEqual({
-        create: [
-          {
-            type: IncidentEventType.INCIDENT_CREATED,
-            actorId: client.sub,
-            metadata: { status: IncidentStatus.OPEN },
-          },
-        ],
+      const { create } = lastWrite(prisma.incident.create).data.events as {
+        create: unknown[];
+      };
+      expect(create[0]).toEqual({
+        type: IncidentEventType.INCIDENT_CREATED,
+        actorId: client.sub,
+        metadata: { status: IncidentStatus.OPEN },
       });
     });
 
@@ -338,8 +340,9 @@ describe('IncidentsService audit events', () => {
           title: 't',
           description: 'd',
           environment: 'production',
+          priority: IncidentLevel.ERROR,
         },
-        [],
+        [png('tela.png')],
         client,
       );
       const updated = await service.updateIncident(

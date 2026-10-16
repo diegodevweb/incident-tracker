@@ -1,11 +1,16 @@
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
-import { IncidentStatus } from '@prisma/client';
+import { IncidentLevel, IncidentStatus } from '@prisma/client';
 import { MAX_LONG_TEXT_LENGTH } from '../limits';
 
 export class UpdateIncidentDto {
   @IsOptional()
   @IsEnum(IncidentStatus)
   status?: IncidentStatus;
+
+  /** Só o admin muda; o service recusa a do cliente. */
+  @IsOptional()
+  @IsEnum(IncidentLevel)
+  priority?: IncidentLevel;
 
   @IsOptional()
   @IsString()

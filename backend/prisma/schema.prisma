@@ -48,6 +48,14 @@ enum IncidentEventType {
   CORRECTIVE_ACTION_ADDED
   CORRECTIVE_ACTION_REMOVED
   ATTACHMENT_ADDED
+  PRIORITY_CHANGED
+}
+
+enum NotificationType {
+  STATUS_CHANGED
+  PRIORITY_CHANGED
+  COMMENT_ADDED
+  CORRECTIVE_ACTION_UPDATED
 }
 
 model User {
@@ -72,6 +80,7 @@ model User {
   createdIncidents Incident[]      @relation("IncidentCreatedBy")
   incidentEvents   IncidentEvent[]
   incidentComments IncidentComment[]
+  notifications    Notification[]
 
   @@index([companyId])
 }
@@ -116,6 +125,7 @@ model Incident {
   preventiveActions PreventiveAction[]
   events            IncidentEvent[]
   comments          IncidentComment[]
+  notifications     Notification[]
 }
 
 model IncidentAttachment {
@@ -184,6 +194,24 @@ model IncidentComment {
   author   User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([incidentId, createdAt])
+}
+
+/// Aviso no painel para um usuário cliente: a equipe mexeu num chamado da
+/// empresa dele. O texto sai do tipo e do metadata, montado no front.
+model Notification {
+  id         Int              @id @default(autoincrement())
+  userId     Int
+  incidentId Int
+  type       NotificationType
+  metadata   Json?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  incident Incident @relation(fields: [incidentId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
 }
 
 /// Chave de webhook de uma empresa. Só o hash SHA-256 da chave é guardado; o

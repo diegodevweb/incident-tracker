@@ -9,6 +9,7 @@ import {
   IncidentLevel,
   IncidentSource,
   IncidentStatus,
+  NotificationType,
   UserRole,
 } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload.interface';
@@ -48,6 +49,7 @@ describe('IncidentsService client actions', () => {
   let prisma: {
     incident: { findUnique: jest.Mock; update: jest.Mock };
     incidentComment: { count: jest.Mock };
+    user: { findMany: jest.Mock };
   };
   let storage: {
     uploadObject: jest.Mock;
@@ -91,6 +93,7 @@ describe('IncidentsService client actions', () => {
         update: jest.fn().mockResolvedValue(incidentRow()),
       },
       incidentComment: { count: jest.fn().mockResolvedValue(0) },
+      user: { findMany: jest.fn().mockResolvedValue([]) },
     };
     storage = {
       uploadObject: jest.fn(({ key }: { key: string }) =>
@@ -314,6 +317,155 @@ describe('IncidentsService client actions', () => {
 
       const [{ key }] = storage.uploadObject.mock.calls[0] as [{ key: string }];
       expect(storage.deleteObject).toHaveBeenCalledWith(key);
+    });
+  });
+
+  describe('priority', () => {
+    it('lets an admin change the priority, recording the previous one', async () => {
+      await service.updateIncident(
+        10,
+        { priority: IncidentLevel.CRITICAL },
+        admin,
+      );
+
+      expect(lastWrite().data).toMatchObject({
+        priority: IncidentLevel.CRITICAL,
+        events: {
+          create: [
+            {
+              type: IncidentEventType.PRIORITY_CHANGED,
+              actorId: admin.sub,
+              metadata: {
+                fromPriority: IncidentLevel.ERROR,
+                toPriority: IncidentLevel.CRITICAL,
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    it('does not let a client change the priority', async () => {
+      await expect(
+        service.updateIncident(
+          10,
+          { priority: IncidentLevel.CRITICAL },
+          client,
+        ),
+      ).rejects.toThrow(
+        'Apenas administradores mudam a criticidade do chamado',
+      );
+
+      expect(prisma.incident.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('notices to the company', () => {
+    const notifications = () =>
+      (
+        lastWrite().data.notifications as {
+          createMany: { data: Record<string, unknown>[] };
+        }
+      ).createMany.data;
+
+    beforeEach(() => {
+      prisma.user.findMany.mockResolvedValue([{ id: 2 }, { id: 5 }]);
+    });
+
+    it("tells every active user of the incident's company about a status change by an admin", async () => {
+      await service.updateIncident(
+        10,
+        { status: IncidentStatus.IN_PROGRESS },
+        admin,
+      );
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: { companyId: 7, role: UserRole.CLIENT, disabledAt: null },
+        select: { id: true },
+      });
+      const metadata = {
+        fromStatus: IncidentStatus.OPEN,
+        toStatus: IncidentStatus.IN_PROGRESS,
+      };
+      expect(notifications()).toEqual([
+        { userId: 2, type: NotificationType.STATUS_CHANGED, metadata },
+        { userId: 5, type: NotificationType.STATUS_CHANGED, metadata },
+      ]);
+    });
+
+    it('sends one notice per change kind when an admin changes several things', async () => {
+      await service.updateIncident(
+        10,
+        {
+          status: IncidentStatus.RESOLVED,
+          priority: IncidentLevel.WARNING,
+          correctiveActions: 'Fila reprocessada',
+        },
+        admin,
+        [png('correcao.png')],
+      );
+
+      expect(
+        notifications()
+          .filter((notice) => notice.userId === 2)
+          .map((notice) => notice.type),
+      ).toEqual([
+        NotificationType.STATUS_CHANGED,
+        NotificationType.PRIORITY_CHANGED,
+        NotificationType.CORRECTIVE_ACTION_UPDATED,
+      ]);
+    });
+
+    it('does not tell anyone when an admin saves without changes', async () => {
+      await service.updateIncident(
+        10,
+        { status: IncidentStatus.OPEN, priority: IncidentLevel.ERROR },
+        admin,
+      );
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(lastWrite().data).not.toHaveProperty('notifications');
+    });
+
+    it('does not tell anyone about what a client did', async () => {
+      await service.updateIncident(
+        10,
+        { status: IncidentStatus.RESOLVED },
+        client,
+      );
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(lastWrite().data).not.toHaveProperty('notifications');
+    });
+
+    it('writes nothing when the company has no active user', async () => {
+      prisma.user.findMany.mockResolvedValue([]);
+
+      await service.updateIncident(
+        10,
+        { status: IncidentStatus.PENDING },
+        admin,
+      );
+
+      expect(lastWrite().data).not.toHaveProperty('notifications');
+    });
+
+    it('tells the company when an admin writes in the conversation', async () => {
+      await service.addComment(10, { message: 'Estamos verificando' }, admin);
+
+      expect(notifications()).toEqual([
+        { userId: 2, type: NotificationType.COMMENT_ADDED },
+        { userId: 5, type: NotificationType.COMMENT_ADDED },
+      ]);
+    });
+
+    it('does not tell the company about a client reply', async () => {
+      prisma.incidentComment.count.mockResolvedValue(1);
+
+      await service.addComment(10, { message: 'Voltou a acontecer' }, client);
+
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+      expect(lastWrite().data).not.toHaveProperty('notifications');
     });
   });
 

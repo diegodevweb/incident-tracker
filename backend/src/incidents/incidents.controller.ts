@@ -70,6 +70,13 @@ export class IncidentsController {
     return this.incidentsService.getMonthlyReport(query, request.user);
   }
 
+  // Os dois papéis veem: o cliente escolhe a criticidade ao abrir o chamado.
+  @Get('sla-rules')
+  @UseGuards(JwtAuthGuard)
+  getSlaRules() {
+    return this.incidentsService.getSlaRules();
+  }
+
   @Post()
   @Throttle({ default: UPLOAD_THROTTLE })
   @UseGuards(JwtAuthGuard)
