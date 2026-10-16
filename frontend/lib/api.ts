@@ -14,6 +14,8 @@ import type {
   IncidentSource,
   IncidentStatus,
   MonthlyReport,
+  NotificationList,
+  SlaRule,
   WebhookKey,
 } from "./types";
 
@@ -241,6 +243,7 @@ export async function updateIncident(
   id: number,
   payload: {
     status?: IncidentStatus;
+    priority?: IncidentLevel;
     correctiveActions?: string;
     correctiveAttachments?: File[];
   },
@@ -252,6 +255,10 @@ export async function updateIncident(
   if (body instanceof FormData) {
     if (fields.status) {
       body.set("status", fields.status);
+    }
+
+    if (fields.priority) {
+      body.set("priority", fields.priority);
     }
 
     if (fields.correctiveActions !== undefined) {
@@ -294,6 +301,23 @@ export async function addIncidentComment(id: number, message: string) {
   });
 
   return mapIncident(data);
+}
+
+/** O que cada criticidade quer dizer e o prazo de primeira resposta. */
+export async function fetchSlaRules() {
+  return apiFetch<SlaRule[]>("/incidents/sla-rules");
+}
+
+export async function fetchNotifications() {
+  return apiFetch<NotificationList>("/notifications");
+}
+
+/** Sem incidentId, marca todos os avisos como lidos. */
+export async function markNotificationsRead(incidentId?: number) {
+  return apiFetch<{ unreadCount: number }>("/notifications/read", {
+    method: "POST",
+    body: JSON.stringify(incidentId ? { incidentId } : {}),
+  });
 }
 
 export async function createPreventiveAction(payload: {
