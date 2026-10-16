@@ -54,6 +54,7 @@ describe('IncidentsService uploads', () => {
     attachments: [],
     logs: [],
     events: [],
+    comments: [],
     company: {},
   };
 

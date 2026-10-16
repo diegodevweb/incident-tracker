@@ -71,6 +71,7 @@ model User {
   company          Company?        @relation(fields: [companyId], references: [id], onDelete: Restrict)
   createdIncidents Incident[]      @relation("IncidentCreatedBy")
   incidentEvents   IncidentEvent[]
+  incidentComments IncidentComment[]
 
   @@index([companyId])
 }
@@ -114,6 +115,7 @@ model Incident {
   logs              IncidentLog[]
   preventiveActions PreventiveAction[]
   events            IncidentEvent[]
+  comments          IncidentComment[]
 }
 
 model IncidentAttachment {
@@ -164,6 +166,22 @@ model IncidentEvent {
   incident Incident @relation(fields: [incidentId], references: [id])
   /// Restrict: apagar um usuário não pode apagar nem anonimizar a autoria dos eventos.
   actor    User?    @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([incidentId, createdAt])
+}
+
+/// Conversa do chamado entre a empresa e os admins. Só recebe inserts. O
+/// cliente só escreve depois que um admin escreveu a primeira mensagem.
+model IncidentComment {
+  id         Int      @id @default(autoincrement())
+  incidentId Int
+  authorId   Int
+  message    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id])
+  /// Restrict: apagar um usuário não pode apagar o que ele escreveu.
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([incidentId, createdAt])
 }
