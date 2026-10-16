@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Prepara este servidor para o deploy automático (.github/workflows/deploy.yml).
+# Prepara este servidor para o botão de deploy (.github/workflows/deploy.yml).
 # Rode uma vez, como o usuário dono do clone (o mesmo que roda docker compose),
 # com o endereço que o GitHub vai usar para chegar aqui:
 #
-#   deploy/setup-auto-deploy.sh <domínio ou IP> [porta do SSH]
+#   deploy/setup-deploy-key.sh <domínio ou IP> [porta do SSH]
 #
 # Cria uma chave SSH só para o deploy e a autoriza com command= e restrict:
 # quem tiver essa chave só consegue rodar deploy/deploy.sh (sem shell, sem
@@ -13,7 +13,7 @@ set -euo pipefail
 
 MARKER=incident-tracker-deploy
 
-host=${1:?Uso: deploy/setup-auto-deploy.sh <domínio ou IP do servidor> [porta do SSH]}
+host=${1:?Uso: deploy/setup-deploy-key.sh <domínio ou IP do servidor> [porta do SSH]}
 port=${2:-22}
 script=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy.sh
 
@@ -61,8 +61,8 @@ cat <<EOF
 
 Chave de deploy autorizada para $(id -un): ela só roda $script.
 
-Cadastre no GitHub, em Settings > Environments > production > Environment
-secrets (crie o ambiente "production" se ele ainda não existir):
+Cadastre no GitHub, em Settings > Secrets and variables > Actions >
+New repository secret, um segredo para cada bloco abaixo, com o mesmo nome:
 
 --- DEPLOY_HOST ----------------------------------------------------------
 $(id -un)@$host
@@ -77,6 +77,6 @@ $known_hosts
 $(cat "$tmp/key")
 --------------------------------------------------------------------------
 
-Depois de cadastrar, limpe o terminal (clear). Para testar sem esperar um
-merge: GitHub > Actions > Deploy > Run workflow.
+Depois de cadastrar, limpe o terminal (clear). Para publicar a main:
+GitHub > Actions > Deploy (PROD) > Run workflow.
 EOF
