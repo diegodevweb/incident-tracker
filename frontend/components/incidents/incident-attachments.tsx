@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { addIncidentAttachments } from "@/lib/api";
 import type { Incident } from "@/lib/types";
 
@@ -11,9 +12,11 @@ const MAX_FILES_PER_UPLOAD = 5;
 export function IncidentAttachments({
   incident,
   onUpdated,
+  onRefresh,
 }: {
   incident: Incident;
   onUpdated: (incident: Incident) => void;
+  onRefresh: () => Promise<void>;
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -49,10 +52,15 @@ export function IncidentAttachments({
   return (
     <aside className="app-surface card border">
       <div className="card-body">
-        <h3 className="text-lg font-semibold">Prints e anexos</h3>
-        <p className="text-sm text-base-content/60">
-          Evidências gerais e anexos cadastrados para o chamado.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Prints e anexos</h3>
+            <p className="text-sm text-base-content/60">
+              Evidências gerais e anexos cadastrados para o chamado.
+            </p>
+          </div>
+          <RefreshButton label="Atualizar anexos" onRefresh={onRefresh} />
+        </div>
 
         {incident.attachments.length ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2">

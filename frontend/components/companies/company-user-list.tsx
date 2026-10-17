@@ -7,6 +7,7 @@ import {
   updateCompanyUser,
 } from "@/lib/api";
 import type { CompanyUser } from "@/lib/types";
+import { useServerDraft } from "@/lib/use-server-draft";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(
@@ -25,8 +26,8 @@ function CompanyUserCard({
   onChanged: (user: CompanyUser) => void;
   onTemporaryPassword: (user: CompanyUser, password: string) => void;
 }) {
-  const [name, setName] = useState(user.name);
-  const [email, setEmail] = useState(user.email);
+  const [name, setName] = useServerDraft(user.name);
+  const [email, setEmail] = useServerDraft(user.email);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const isDisabled = user.disabledAt !== null;

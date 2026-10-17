@@ -20,6 +20,7 @@ export function ReportsPageClient({
   const session = useAuthSession();
   const [report, setReport] = useState<MonthlyReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -59,24 +60,20 @@ export function ReportsPageClient({
     };
   }, [endDate, router, session, startDate]);
 
-  function refreshReport() {
-    setIsLoading(true);
-    setError(null);
-
-    void fetchMonthlyReport(
-      `${startDate}T00:00:00.000Z`,
-      `${endDate}T23:59:59.999Z`,
-    )
-      .then((data) => {
-        setReport(data);
-      })
-      .catch(() => {
-        setReport(null);
-        setError("Não foi possível atualizar o relatório.");
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+  // O relatório continua na tela enquanto busca: a ação preventiva em
+  // digitação não se perde.
+  async function refreshReport() {
+    try {
+      setReport(
+        await fetchMonthlyReport(
+          `${startDate}T00:00:00.000Z`,
+          `${endDate}T23:59:59.999Z`,
+        ),
+      );
+      setRefreshError(null);
+    } catch {
+      setRefreshError("Não foi possível atualizar o relatório.");
+    }
   }
 
   return (
@@ -87,7 +84,11 @@ export function ReportsPageClient({
         userInitials={getInitials(session?.user.name ?? "Usuário")}
       />
 
-      <div className="p-6">
+      <div className="space-y-6 p-6">
+        {refreshError ? (
+          <div className="alert alert-error text-sm">{refreshError}</div>
+        ) : null}
+
         {isLoading ? (
           <div className="app-surface-muted rounded-3xl border p-6 text-sm text-base-content/60">
             Carregando relatório...

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { incidentAuthorLabel, incidentSourceLabel } from "@/lib/labels";
 import type { Incident } from "@/lib/types";
 import { IncidentPriorityBadge } from "./incident-priority-badge";
@@ -13,8 +14,10 @@ function formatDate(value: string) {
 
 export function IncidentList({
   incidents,
+  onRefresh,
 }: {
   incidents: Incident[];
+  onRefresh: () => Promise<void>;
 }) {
   return (
     <div className="app-surface overflow-hidden rounded-3xl border">
@@ -27,7 +30,12 @@ export function IncidentList({
               <th>Prioridade</th>
               <th>Origem</th>
               <th>Cliente</th>
-              <th>Criado em</th>
+              <th>
+                <div className="flex items-center justify-between gap-2">
+                  Criado em
+                  <RefreshButton label="Atualizar tickets" onRefresh={onRefresh} />
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>

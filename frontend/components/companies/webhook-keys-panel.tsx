@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { createWebhookKey, fetchWebhookKeys, revokeWebhookKey } from "@/lib/api";
 import type { WebhookKey } from "@/lib/types";
 import { OneTimeSecretNotice } from "./one-time-secret-notice";
@@ -36,6 +37,15 @@ export function WebhookKeysPanel({
       .then(setKeys)
       .catch(() => setError("Não foi possível carregar as integrações."));
   }, [companyId]);
+
+  async function refreshKeys() {
+    try {
+      setKeys(await fetchWebhookKeys(companyId));
+      setError(null);
+    } catch {
+      setError("Não foi possível atualizar as integrações.");
+    }
+  }
 
   function run(action: () => Promise<void>, fallbackError: string) {
     setError(null);
@@ -78,16 +88,20 @@ export function WebhookKeysPanel({
   return (
     <section className="app-surface card border">
       <div className="card-body gap-5">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">Integrações</h2>
-          <p className="mt-1 text-sm text-base-content/60">
-            Cada sistema da empresa que envia erros pelo webhook usa uma chave
-            no header <code className="font-mono">x-api-key</code>. Para trocar
-            uma chave, crie a nova, configure na integração e revogue a antiga.
-            {companyDisabled
-              ? " Com a empresa desativada, nenhuma chave funciona."
-              : ""}
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Integrações</h2>
+            <p className="mt-1 text-sm text-base-content/60">
+              Cada sistema da empresa que envia erros pelo webhook usa uma chave
+              no header <code className="font-mono">x-api-key</code>. Para
+              trocar uma chave, crie a nova, configure na integração e revogue
+              a antiga.
+              {companyDisabled
+                ? " Com a empresa desativada, nenhuma chave funciona."
+                : ""}
+            </p>
+          </div>
+          <RefreshButton label="Atualizar integrações" onRefresh={refreshKeys} />
         </div>
 
         {issued ? (

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useTransition } from "react";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { createPreventiveAction } from "@/lib/api";
 import {
   getIncidentPriorityLabel,
@@ -38,7 +39,7 @@ export function MonthlyReportView({
   onReportRefresh,
 }: {
   report: MonthlyReport;
-  onReportRefresh?: () => void;
+  onReportRefresh: () => Promise<void>;
 }) {
   const pathname = usePathname();
   const [preventiveAction, setPreventiveAction] = useState("");
@@ -75,7 +76,7 @@ export function MonthlyReportView({
         });
         setPreventiveAction("");
         setRelatedIncidentId("");
-        onReportRefresh?.();
+        await onReportRefresh();
       } catch {
         setSubmitError("Não foi possível cadastrar a ação preventiva.");
       }
@@ -87,19 +88,25 @@ export function MonthlyReportView({
       <section className="app-surface card border">
         <div className="card-body gap-6">
           <form action={pathname} method="get" className="space-y-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight">
-                  Relatório técnico mensal
-                </h2>
-                <p className="mt-1 text-sm text-base-content/60">
-                  Consolidado mensal com incidentes, criticidade, ações e
-                  indicadores técnicos previstos em contrato.
-                </p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-tight">
+                    Relatório técnico mensal
+                  </h2>
+                  <p className="mt-1 text-sm text-base-content/60">
+                    Consolidado mensal com incidentes, criticidade, ações e
+                    indicadores técnicos previstos em contrato.
+                  </p>
+                </div>
+                <button type="button" className="btn btn-outline">
+                  Exportar PDF
+                </button>
               </div>
-              <button type="button" className="btn btn-outline">
-                Exportar PDF
-              </button>
+              <RefreshButton
+                label="Atualizar relatório"
+                onRefresh={onReportRefresh}
+              />
             </div>
             <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto_auto]">
               <label className="form-control">
@@ -218,13 +225,19 @@ export function MonthlyReportView({
       </details>
 
       <details open className="app-surface rounded-3xl border">
-        <summary className="cursor-pointer list-none px-6 py-5">
-          <h3 className="text-lg font-semibold">
-            Incidentes atendidos no período
-          </h3>
-          <p className="text-sm text-base-content/60">
-            Clique para recolher ou expandir
-          </p>
+        <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-6 py-5">
+          <div>
+            <h3 className="text-lg font-semibold">
+              Incidentes atendidos no período
+            </h3>
+            <p className="text-sm text-base-content/60">
+              Clique para recolher ou expandir
+            </p>
+          </div>
+          <RefreshButton
+            label="Atualizar incidentes do período"
+            onRefresh={onReportRefresh}
+          />
         </summary>
         <div className="px-6 pb-6">
           <div className="px-6 pb-6">
@@ -291,11 +304,19 @@ export function MonthlyReportView({
       <section className="grid max-w-full gap-6 overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
         <article className="app-surface card border">
           <div className="card-body">
-            <h3 className="text-lg font-semibold">Ações corretivas</h3>
-            <p className="text-sm text-base-content/60">
-              Lista das ações registradas nos chamados dentro do período
-              filtrado.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Ações corretivas</h3>
+                <p className="text-sm text-base-content/60">
+                  Lista das ações registradas nos chamados dentro do período
+                  filtrado.
+                </p>
+              </div>
+              <RefreshButton
+                label="Atualizar ações corretivas"
+                onRefresh={onReportRefresh}
+              />
+            </div>
             <div className="mt-4 overflow-x-auto">
               {correctiveActionsInPeriod.length ? (
                 <table className="table table-zebra w-full">
@@ -366,11 +387,19 @@ export function MonthlyReportView({
 
         <article className="app-surface card border">
           <div className="card-body">
-            <h3 className="text-lg font-semibold">Ações preventivas</h3>
-            <p className="text-sm text-base-content/60">
-              Cadastre medidas preventivas e relacione com um chamado quando
-              fizer sentido.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold">Ações preventivas</h3>
+                <p className="text-sm text-base-content/60">
+                  Cadastre medidas preventivas e relacione com um chamado
+                  quando fizer sentido.
+                </p>
+              </div>
+              <RefreshButton
+                label="Atualizar ações preventivas"
+                onRefresh={onReportRefresh}
+              />
+            </div>
 
             <form
               className="mt-4 space-y-4"
@@ -460,7 +489,13 @@ export function MonthlyReportView({
 
         <article className="app-surface card border">
           <div className="card-body">
-            <h3 className="text-lg font-semibold">Indicadores técnicos</h3>
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-lg font-semibold">Indicadores técnicos</h3>
+              <RefreshButton
+                label="Atualizar indicadores"
+                onRefresh={onReportRefresh}
+              />
+            </div>
             <div className="mt-3 space-y-3">
               {report.technicalIndicators.map((indicator) => (
                 <div

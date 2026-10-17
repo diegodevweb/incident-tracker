@@ -15,11 +15,21 @@ import { IncidentDetails } from "./incident-details";
 import { IncidentManagementPanel } from "./incident-management-panel";
 import { IncidentTimeline } from "./incident-timeline";
 
+// Ver o chamado dá por vistos os avisos dele.
+function markIncidentNotificationsSeen(id: number) {
+  void markNotificationsRead(id)
+    .then(announceNotificationsChanged)
+    .catch(() => {
+      // Sem marcar, o aviso só continua no sino.
+    });
+}
+
 export function IncidentDetailsPageClient({ id }: { id: number }) {
   const router = useRouter();
   const session = useAuthSession();
   const [incident, setIncident] = useState<Incident | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const activeRole = session?.user.role ?? "CLIENT";
 
@@ -48,18 +58,27 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
       });
   }, [id, session]);
 
-  // Abrir o chamado dá por vistos os avisos dele.
   useEffect(() => {
-    if (session?.user.role !== "CLIENT") {
+    if (session?.user.role === "CLIENT") {
+      markIncidentNotificationsSeen(id);
+    }
+  }, [id, session]);
+
+  // Os cards continuam na tela enquanto busca: quem está escrevendo uma
+  // mensagem ou editando a gestão não perde o que digitou.
+  async function refreshIncident() {
+    try {
+      setIncident(await fetchIncident(id));
+      setRefreshError(null);
+    } catch {
+      setRefreshError("Não foi possível atualizar o chamado.");
       return;
     }
 
-    void markNotificationsRead(id)
-      .then(announceNotificationsChanged)
-      .catch(() => {
-        // Sem marcar, o aviso só continua no sino.
-      });
-  }, [id, session]);
+    if (activeRole === "CLIENT") {
+      markIncidentNotificationsSeen(id);
+    }
+  }
 
   const displayName = session?.user.name ?? "Usuário";
 
@@ -89,29 +108,40 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
           </div>
         ) : (
           <>
+            {refreshError ? (
+              <div className="alert alert-error text-sm">{refreshError}</div>
+            ) : null}
+
             <IncidentDetails
               incident={incident}
               role={activeRole}
               onUpdated={setIncident}
+              onRefresh={refreshIncident}
             />
 
             <IncidentConversation
               incident={incident}
               role={activeRole}
               onUpdated={setIncident}
+              onRefresh={refreshIncident}
             />
 
-            <IncidentTimeline incident={incident} />
+            <IncidentTimeline incident={incident} onRefresh={refreshIncident} />
 
             <div className="grid gap-6">
               <IncidentManagementPanel
                 incident={incident}
                 role={activeRole}
                 onUpdated={setIncident}
+                onRefresh={refreshIncident}
               />
             </div>
 
-            <IncidentAttachments incident={incident} onUpdated={setIncident} />
+            <IncidentAttachments
+              incident={incident}
+              onUpdated={setIncident}
+              onRefresh={refreshIncident}
+            />
           </>
         )}
       </div>
