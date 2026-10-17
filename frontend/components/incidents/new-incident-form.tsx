@@ -198,7 +198,7 @@ export function NewIncidentForm() {
               </label>
 
               <label className="form-control">
-                <span className="label-text mb-2">E-mail para retorno</span>
+                <span className="label-text mb-2">E-mail do responsável</span>
                 <input
                   type="email"
                   value={contactEmail}
