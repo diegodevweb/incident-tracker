@@ -1,5 +1,6 @@
 "use client";
 
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { getIncidentPriorityLabel, incidentStatusLabel } from "@/lib/labels";
 import type {
   Incident,
@@ -124,8 +125,10 @@ function getActorName(
 
 export function IncidentTimeline({
   incident,
+  onRefresh,
 }: {
   incident: Incident;
+  onRefresh: () => Promise<void>;
 }) {
   const baseEvents = [...(incident.events ?? [])];
   const hasCreatedEvent = baseEvents.some(
@@ -215,12 +218,15 @@ export function IncidentTimeline({
   return (
     <section className="app-surface card border">
       <div className="card-body gap-6">
-        <div>
-          <h3 className="text-lg font-semibold">Timeline técnica</h3>
-          <p className="text-sm text-base-content/60">
-            Histórico operacional do incidente com mudanças de status, ações e
-            evidências.
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Timeline técnica</h3>
+            <p className="text-sm text-base-content/60">
+              Histórico operacional do incidente com mudanças de status, ações
+              e evidências.
+            </p>
+          </div>
+          <RefreshButton label="Atualizar timeline" onRefresh={onRefresh} />
         </div>
 
         {orderedEvents.length ? (

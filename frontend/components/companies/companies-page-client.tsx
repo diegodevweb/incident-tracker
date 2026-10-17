@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { Topbar } from "@/components/dashboard/topbar";
 import { fetchCompanies } from "@/lib/api";
 import { formatCnpj } from "@/lib/cnpj";
@@ -47,6 +48,15 @@ export function CompaniesPageClient() {
         setLoadError("Não foi possível carregar os clientes.");
       });
   }, [isAdmin, page, query]);
+
+  async function refreshCompanies() {
+    try {
+      setListPage(await fetchCompanies({ page, q: query }));
+      setLoadError(null);
+    } catch {
+      setLoadError("Não foi possível atualizar os clientes.");
+    }
+  }
 
   const totalPages = listPage
     ? Math.max(1, Math.ceil(listPage.total / listPage.pageSize))
@@ -110,7 +120,15 @@ export function CompaniesPageClient() {
                     <th>CNPJ</th>
                     <th>Usuários</th>
                     <th>Chamados em aberto</th>
-                    <th>Situação</th>
+                    <th>
+                      <div className="flex items-center justify-between gap-2">
+                        Situação
+                        <RefreshButton
+                          label="Atualizar clientes"
+                          onRefresh={refreshCompanies}
+                        />
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

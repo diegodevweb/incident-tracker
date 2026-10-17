@@ -1,3 +1,4 @@
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import {
   incidentAuthorLabel,
   incidentEnvironmentLabel,
@@ -19,26 +20,32 @@ export function IncidentDetails({
   incident,
   role = "ADMIN",
   onUpdated,
+  onRefresh,
 }: {
   incident: Incident;
   role?: "ADMIN" | "CLIENT";
   onUpdated: (incident: Incident) => void;
+  onRefresh: () => Promise<void>;
 }) {
   return (
     <section className="app-surface card border">
-      <div className="card-body gap-6">
+      <div className="card-body gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <IncidentStatusBadge status={incident.status} />
+            <IncidentPriorityBadge
+              priority={incident.priority}
+              source={incident.source}
+            />
+            <span className="badge badge-outline">
+              {incidentSourceLabel[incident.source]}
+            </span>
+          </div>
+          <RefreshButton label="Atualizar chamado" onRefresh={onRefresh} />
+        </div>
+
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_28rem]">
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <IncidentStatusBadge status={incident.status} />
-              <IncidentPriorityBadge
-                priority={incident.priority}
-                source={incident.source}
-              />
-              <span className="badge badge-outline">
-                {incidentSourceLabel[incident.source]}
-              </span>
-            </div>
             <div>
               <h2 className="text-2xl font-semibold tracking-tight">
                 {incident.title}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { addIncidentComment } from "@/lib/api";
 import type { Incident, UserRole } from "@/lib/types";
 
@@ -23,10 +24,12 @@ export function IncidentConversation({
   incident,
   role,
   onUpdated,
+  onRefresh,
 }: {
   incident: Incident;
   role: UserRole;
   onUpdated: (incident: Incident) => void;
+  onRefresh: () => Promise<void>;
 }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -58,13 +61,16 @@ export function IncidentConversation({
   return (
     <section className="app-surface card border">
       <div className="card-body gap-6">
-        <div>
-          <h3 className="text-lg font-semibold">Conversa</h3>
-          <p className="text-sm text-base-content/60">
-            {role === "ADMIN"
-              ? "Mensagens trocadas com a empresa sobre este chamado."
-              : "Mensagens trocadas com a equipe de suporte sobre este chamado."}
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Conversa</h3>
+            <p className="text-sm text-base-content/60">
+              {role === "ADMIN"
+                ? "Mensagens trocadas com a empresa sobre este chamado."
+                : "Mensagens trocadas com a equipe de suporte sobre este chamado."}
+            </p>
+          </div>
+          <RefreshButton label="Atualizar conversa" onRefresh={onRefresh} />
         </div>
 
         {comments.length ? (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { Topbar } from "@/components/dashboard/topbar";
 import { ApiError, fetchCompany, fetchCompanyUsers } from "@/lib/api";
 import { getInitials } from "@/lib/session";
@@ -23,6 +24,7 @@ export function CompanyPageClient({ id }: { id: number }) {
   const [company, setCompany] = useState<Company | null>(null);
   const [users, setUsers] = useState<CompanyUser[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [issuedPassword, setIssuedPassword] = useState<IssuedPassword | null>(
     null,
   );
@@ -58,6 +60,15 @@ export function CompanyPageClient({ id }: { id: number }) {
       });
   }, [id, isAdmin]);
 
+  async function refreshUsers() {
+    try {
+      setUsers(await fetchCompanyUsers(id));
+      setUsersError(null);
+    } catch {
+      setUsersError("Não foi possível atualizar os usuários.");
+    }
+  }
+
   function replaceUser(updated: CompanyUser) {
     setUsers((current) =>
       (current ?? []).map((user) => (user.id === updated.id ? updated : user)),
@@ -91,15 +102,25 @@ export function CompanyPageClient({ id }: { id: number }) {
 
             <section className="app-surface card border">
               <div className="card-body gap-5">
-                <div>
-                  <h2 className="text-xl font-semibold tracking-tight">
-                    Usuários
-                  </h2>
-                  <p className="mt-1 text-sm text-base-content/60">
-                    Todas as pessoas da empresa veem todos os chamados dela,
-                    inclusive os abertos pela integração.
-                  </p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold tracking-tight">
+                      Usuários
+                    </h2>
+                    <p className="mt-1 text-sm text-base-content/60">
+                      Todas as pessoas da empresa veem todos os chamados dela,
+                      inclusive os abertos pela integração.
+                    </p>
+                  </div>
+                  <RefreshButton
+                    label="Atualizar usuários"
+                    onRefresh={refreshUsers}
+                  />
                 </div>
+
+                {usersError ? (
+                  <div className="alert alert-error text-sm">{usersError}</div>
+                ) : null}
 
                 {issuedPassword ? (
                   <OneTimeSecretNotice

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { updateIncident } from "@/lib/api";
 import { getIncidentPriorityLabel, incidentStatusLabel } from "@/lib/labels";
 import type {
@@ -10,6 +11,7 @@ import type {
   IncidentStatus,
   UserRole,
 } from "@/lib/types";
+import { useServerDraft } from "@/lib/use-server-draft";
 import { IncidentPriorityBadge } from "./incident-priority-badge";
 import { IncidentStatusBadge } from "./incident-status-badge";
 import { SlaRuleList, useSlaRules } from "./sla-rules";
@@ -31,16 +33,24 @@ export function IncidentManagementPanel({
   incident,
   role,
   onUpdated,
+  onRefresh,
 }: {
   incident: Incident;
   role: UserRole;
   onUpdated: (incident: Incident) => void;
+  onRefresh: () => Promise<void>;
 }) {
   if (role === "CLIENT") {
-    return <IncidentFollowUp incident={incident} />;
+    return <IncidentFollowUp incident={incident} onRefresh={onRefresh} />;
   }
 
-  return <IncidentManagementForm incident={incident} onUpdated={onUpdated} />;
+  return (
+    <IncidentManagementForm
+      incident={incident}
+      onUpdated={onUpdated}
+      onRefresh={onRefresh}
+    />
+  );
 }
 
 function getCorrectiveAttachments(incident: Incident) {
@@ -70,7 +80,13 @@ function AttachmentLinks({ attachments }: { attachments: IncidentAttachment[] })
   );
 }
 
-function IncidentFollowUp({ incident }: { incident: Incident }) {
+function IncidentFollowUp({
+  incident,
+  onRefresh,
+}: {
+  incident: Incident;
+  onRefresh: () => Promise<void>;
+}) {
   const solution = incident.correctiveActions?.trim();
   const solutionAttachments = getCorrectiveAttachments(incident);
   const resolved = incident.status === "RESOLVED";
@@ -80,12 +96,18 @@ function IncidentFollowUp({ incident }: { incident: Incident }) {
   return (
     <section className="app-surface card border">
       <div className="card-body gap-6">
-        <div>
-          <h3 className="text-lg font-semibold">Acompanhamento do chamado</h3>
-          <p className="text-sm text-base-content/60">
-            Em que etapa está o atendimento e o que a equipe de suporte fez para
-            resolver.
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Acompanhamento do chamado</h3>
+            <p className="text-sm text-base-content/60">
+              Em que etapa está o atendimento e o que a equipe de suporte fez
+              para resolver.
+            </p>
+          </div>
+          <RefreshButton
+            label="Atualizar acompanhamento"
+            onRefresh={onRefresh}
+          />
         </div>
 
         <div className="app-surface-muted flex flex-wrap items-center gap-3 rounded-2xl border p-4">
@@ -159,13 +181,19 @@ function IncidentFollowUp({ incident }: { incident: Incident }) {
 function IncidentManagementForm({
   incident,
   onUpdated,
+  onRefresh,
 }: {
   incident: Incident;
   onUpdated: (incident: Incident) => void;
+  onRefresh: () => Promise<void>;
 }) {
-  const [status, setStatus] = useState<IncidentStatus>(incident.status);
-  const [priority, setPriority] = useState<IncidentLevel>(incident.priority);
-  const [correctiveActions, setCorrectiveActions] = useState(
+  // Ao atualizar o card, os campos que o admin não mexeu passam a mostrar o
+  // que está no servidor (o cliente pode ter encerrado ou reaberto o chamado).
+  const [status, setStatus] = useServerDraft<IncidentStatus>(incident.status);
+  const [priority, setPriority] = useServerDraft<IncidentLevel>(
+    incident.priority,
+  );
+  const [correctiveActions, setCorrectiveActions] = useServerDraft(
     incident.correctiveActions ?? "",
   );
   const [correctiveAttachmentFiles, setCorrectiveAttachmentFiles] = useState<File[]>([]);
@@ -208,11 +236,17 @@ function IncidentManagementForm({
   return (
     <section className="app-surface card border">
       <div className="card-body gap-6">
-        <div>
-          <h3 className="text-lg font-semibold">Gestão do chamado</h3>
-          <p className="text-sm text-base-content/60">
-            Atualize status e criticidade, descreva a ação corretiva executada e relacione prints da solução. A empresa é avisada no painel.
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Gestão do chamado</h3>
+            <p className="text-sm text-base-content/60">
+              Atualize status e criticidade, descreva a ação corretiva executada e relacione prints da solução. A empresa é avisada no painel.
+            </p>
+          </div>
+          <RefreshButton
+            label="Atualizar gestão do chamado"
+            onRefresh={onRefresh}
+          />
         </div>
 
         <form className="space-y-6" onSubmit={handleSubmit}>

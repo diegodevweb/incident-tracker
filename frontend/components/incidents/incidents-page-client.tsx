@@ -11,6 +11,7 @@ import { getInitials } from "@/lib/session";
 import type {
   IncidentFilter,
   IncidentListPage,
+  UserRole,
 } from "@/lib/types";
 import { IncidentList } from "./incident-list";
 import { IncidentsPagination } from "./incidents-pagination";
@@ -47,6 +48,38 @@ function resolvePage(value?: string) {
   return Number.isInteger(page) && page >= 1 ? page : 1;
 }
 
+// O cliente vê todos os chamados da empresa dele (a API já restringe),
+// abertos por qualquer pessoa da equipe ou pela integração.
+function buildApiQuery(
+  role: UserRole,
+  filter: IncidentFilter,
+  params: {
+    q?: string;
+    status?: string;
+    source?: string;
+    company?: string;
+    page: number;
+  },
+) {
+  if (role === "CLIENT") {
+    return { page: params.page };
+  }
+
+  return {
+    q: params.q,
+    status: params.status,
+    source:
+      filter === "WEBHOOK"
+        ? "WEBHOOK"
+        : filter === "DASHBOARD"
+          ? "DASHBOARD"
+          : params.source,
+    environment: filter === "PRODUCTION" ? "production" : undefined,
+    company: params.company,
+    page: params.page,
+  };
+}
+
 export function IncidentsPageClient({
   initialSearchParams: { filter, q, status, source, company, page: pageParam },
 }: IncidentsPageClientProps) {
@@ -72,24 +105,13 @@ export function IncidentsPageClient({
       return;
     }
 
-    // O cliente vê todos os chamados da empresa dele (a API já restringe),
-    // abertos por qualquer pessoa da equipe ou pela integração.
-    const apiQuery =
-      activeRole === "CLIENT"
-        ? { page }
-        : {
-            q,
-            status,
-            source:
-              activeFilter === "WEBHOOK"
-                ? "WEBHOOK"
-                : activeFilter === "DASHBOARD"
-                  ? "DASHBOARD"
-                  : source,
-            environment: activeFilter === "PRODUCTION" ? "production" : undefined,
-            company,
-            page,
-          };
+    const apiQuery = buildApiQuery(activeRole, activeFilter, {
+      q,
+      status,
+      source,
+      company,
+      page,
+    });
 
     void fetchIncidents(apiQuery)
       .then((data) => {
@@ -110,6 +132,25 @@ export function IncidentsPageClient({
     source,
     status,
   ]);
+
+  async function refreshList() {
+    try {
+      setListPage(
+        await fetchIncidents(
+          buildApiQuery(activeRole, activeFilter, {
+            q,
+            status,
+            source,
+            company,
+            page,
+          }),
+        ),
+      );
+      setLoadError(null);
+    } catch {
+      setLoadError("Não foi possível atualizar os tickets.");
+    }
+  }
 
   const incidents = listPage?.items ?? [];
   // Os totais vêm do servidor (conjunto filtrado inteiro); a página só tem uma fatia.
@@ -204,7 +245,7 @@ export function IncidentsPageClient({
           <div className="alert alert-error text-sm">{loadError}</div>
         ) : null}
 
-        <IncidentList incidents={incidents} />
+        <IncidentList incidents={incidents} onRefresh={refreshList} />
 
         {listPage ? (
           <IncidentsPagination
