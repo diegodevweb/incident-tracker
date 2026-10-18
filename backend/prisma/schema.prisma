@@ -114,6 +114,12 @@ model Incident {
   companyId         Int
   /// Quem abriu pelo painel; nulo quando veio do webhook ou é anterior ao registro de autoria.
   createdById       Int?
+  /// Primeira mensagem ou mudança de status de um admin (ou a abertura, quando
+  /// foi um admin que abriu): para o relógio do SLA de primeira resposta.
+  firstRespondedAt  DateTime?
+  /// A criticidade que valia na primeira resposta, de onde sai o prazo dela:
+  /// mudar a criticidade depois não muda o resultado do SLA (ver sla.ts).
+  responsePriority  IncidentLevel?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 

@@ -261,7 +261,10 @@ describe('IncidentsService pagination, report limits and user exposure', () => {
       async (_name, run, mock) => {
         await run();
 
-        const calls = mock().mock.calls as Call[];
+        // A lista também lê a fila do SLA, só com select: vale a de include.
+        const calls = (mock().mock.calls as Call[]).filter(
+          ([args]) => args.include,
+        );
         const include = calls[calls.length - 1][0].include;
         expect(include.company).toEqual(PUBLIC_COMPANY);
         // O relatório e o webhook não trazem o autor; quem traz, só id e nome.
