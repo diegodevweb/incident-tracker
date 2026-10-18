@@ -13,39 +13,44 @@ import {
   incidentStatusLabel,
   reportExecutionStatusLabel,
 } from "@/lib/labels";
+import {
+  REPORT_CLIENT_NAME,
+  REPORT_DISCLAIMER,
+  REPORT_PROVIDER_NAME,
+  REPORT_TITLE,
+  correctiveActionsInPeriod as listCorrectiveActionsInPeriod,
+  criticalEntriesCount,
+  downloadMonthlyReportCsv,
+  downloadMonthlyReportXlsx,
+} from "@/lib/report-export";
+import {
+  currentReportMonth,
+  formatReportDate,
+  formatReportDateTime,
+  formatReportMonthYear,
+  recentReportMonths,
+  reportMonthLabel,
+} from "@/lib/report-period";
 import type { MonthlyReport } from "@/lib/types";
 
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "long",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-  }).format(new Date(value));
-}
-
-function formatMonthYear(value: string) {
-  return new Intl.DateTimeFormat("pt-BR", {
-    month: "long",
-    year: "numeric",
-  }).format(new Date(value));
-}
+// Competências oferecidas no filtro: os últimos dois anos.
+const SELECTABLE_MONTHS = 24;
 
 export function MonthlyReportView({
   report,
+  month,
   onReportRefresh,
 }: {
   report: MonthlyReport;
+  /** Competência do relatório, AAAA-MM. */
+  month: string;
   onReportRefresh: () => Promise<void>;
 }) {
   const pathname = usePathname();
   const [preventiveAction, setPreventiveAction] = useState("");
   const [relatedIncidentId, setRelatedIncidentId] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const incidentOptions = Array.from(
@@ -56,12 +61,24 @@ export function MonthlyReportView({
       ]),
     ).values(),
   );
-  const reportPeriodStart = new Date(report.periodStart);
-  const reportPeriodEnd = new Date(report.periodEnd);
-  const correctiveActionsInPeriod = report.correctiveActions.filter((action) => {
-    const createdAt = new Date(action.createdAt);
-    return createdAt >= reportPeriodStart && createdAt <= reportPeriodEnd;
-  });
+  const correctiveActionsInPeriod = listCorrectiveActionsInPeriod(report);
+  const recentMonths = recentReportMonths(
+    currentReportMonth(),
+    SELECTABLE_MONTHS,
+  );
+  const monthOptions = recentMonths.includes(month)
+    ? recentMonths
+    : [month, ...recentMonths];
+
+  function handleExport(exportReport: () => void) {
+    setExportError(null);
+
+    try {
+      exportReport();
+    } catch {
+      setExportError("Não foi possível exportar o relatório.");
+    }
+  }
 
   function handlePreventiveActionSubmit(
     event: React.FormEvent<HTMLFormElement>,
@@ -85,7 +102,7 @@ export function MonthlyReportView({
   }
 
   return (
-    <div className="max-w-full overflow-x-hidden space-y-6">
+    <div className="max-w-full overflow-x-hidden space-y-6 print:hidden">
       <section className="app-surface card border">
         <div className="card-body gap-6">
           <form action={pathname} method="get" className="space-y-6">
@@ -93,42 +110,63 @@ export function MonthlyReportView({
               <div className="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <h2 className="text-2xl font-semibold tracking-tight">
-                    Relatório técnico mensal
+                    {REPORT_TITLE}
                   </h2>
                   <p className="mt-1 text-sm text-base-content/60">
-                    Consolidado mensal com incidentes, criticidade, ações e
-                    indicadores técnicos previstos em contrato.
+                    Cliente: {REPORT_CLIENT_NAME} · Fornecedor:{" "}
+                    {REPORT_PROVIDER_NAME}
                   </p>
                 </div>
-                <button type="button" className="btn btn-outline">
-                  Exportar PDF
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => handleExport(() => window.print())}
+                  >
+                    Exportar PDF
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() =>
+                      handleExport(() => downloadMonthlyReportCsv(report, month))
+                    }
+                  >
+                    Exportar CSV
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() =>
+                      handleExport(() => downloadMonthlyReportXlsx(report, month))
+                    }
+                  >
+                    Exportar Excel
+                  </button>
+                </div>
               </div>
               <RefreshButton
                 label="Atualizar relatório"
                 onRefresh={onReportRefresh}
               />
             </div>
-            <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto_auto]">
+            {exportError ? (
+              <div className="alert alert-error text-sm">{exportError}</div>
+            ) : null}
+            <div className="grid gap-4 md:grid-cols-[minmax(0,20rem)_auto_auto]">
               <label className="form-control">
-                <span className="label-text mb-2">Período inicial</span>
-                <input
-                  type="date"
-                  name="startDate"
-                  defaultValue={report.periodStart.slice(0, 10)}
-                  className="input input-bordered w-full"
-                  required
-                />
-              </label>
-              <label className="form-control">
-                <span className="label-text mb-2">Período final</span>
-                <input
-                  type="date"
-                  name="endDate"
-                  defaultValue={report.periodEnd.slice(0, 10)}
-                  className="input input-bordered w-full"
-                  required
-                />
+                <span className="label-text mb-2">Competência</span>
+                <select
+                  name="month"
+                  defaultValue={month}
+                  className="select select-bordered w-full"
+                >
+                  {monthOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {reportMonthLabel(option)}
+                    </option>
+                  ))}
+                </select>
               </label>
               <div className="flex items-end">
                 <button type="submit" className="btn btn-primary w-full md:w-auto">
@@ -146,14 +184,14 @@ export function MonthlyReportView({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <div className="app-surface-muted rounded-2xl border p-4">
               <p className="text-sm text-base-content/60">Competência</p>
-              <p className="mt-2 text-2xl font-semibold capitalize">
-                {report.monthLabel}
+              <p className="mt-2 text-2xl font-semibold">
+                {reportMonthLabel(month)}
               </p>
             </div>
             <div className="app-surface-muted rounded-2xl border p-4">
               <p className="text-sm text-base-content/60">Gerado em</p>
               <p className="mt-2 text-sm font-medium">
-                {formatDateTime(report.generatedAt)}
+                {formatReportDateTime(report.generatedAt)}
               </p>
             </div>
             <div className="app-surface-muted rounded-2xl border p-4">
@@ -169,18 +207,13 @@ export function MonthlyReportView({
                 Críticos no período
               </p>
               <p className="mt-2 text-2xl font-semibold">
-                {
-                  report.entries.filter(
-                    (entry) => entry.priority === "CRITICAL",
-                  ).length
-                }
+                {criticalEntriesCount(report)}
               </p>
             </div>
           </div>
 
           <div className="app-surface-muted rounded-2xl border p-4 text-sm text-base-content/70">
-            Relatório técnico limitado às atividades previstas em contrato, sem
-            natureza de auditoria, perícia técnica ou laudo judicial.
+            {REPORT_DISCLAIMER}
           </div>
         </div>
       </section>
@@ -350,11 +383,11 @@ export function MonthlyReportView({
                           </Link>
                         </td>
                         <td className="capitalize">
-                          {formatMonthYear(action.createdAt)}
+                          {formatReportMonthYear(action.createdAt)}
                         </td>
                         <td>{incidentStatusLabel[action.status]}</td>
                         <td className="whitespace-nowrap">
-                          {formatDate(action.createdAt)}
+                          {formatReportDate(action.createdAt)}
                         </td>
                         <td className="min-w-80 text-sm text-base-content/75">
                           {action.description ?? "-"}
@@ -468,7 +501,7 @@ export function MonthlyReportView({
                         {action.description}
                       </p>
                       <p className="mt-3 text-xs text-base-content/50">
-                        {formatDate(action.createdAt)}
+                        {formatReportDate(action.createdAt)}
                       </p>
                       {action.incidentId ? (
                         <Link
