@@ -1,7 +1,12 @@
 "use client";
 
+import { CollapsibleCard } from "@/components/dashboard/collapsible-card";
 import { RefreshButton } from "@/components/dashboard/refresh-button";
-import { getIncidentPriorityLabel, incidentStatusLabel } from "@/lib/labels";
+import {
+  countLabel,
+  getIncidentPriorityLabel,
+  incidentStatusLabel,
+} from "@/lib/labels";
 import type {
   Incident,
   IncidentEvent,
@@ -216,74 +221,66 @@ export function IncidentTimeline({
   );
 
   return (
-    <section className="app-surface card border">
-      <div className="card-body gap-6">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold">Timeline técnica</h3>
-            <p className="text-sm text-base-content/60">
-              Histórico operacional do incidente com mudanças de status, ações
-              e evidências.
-            </p>
-          </div>
-          <RefreshButton label="Atualizar timeline" onRefresh={onRefresh} />
-        </div>
+    <CollapsibleCard
+      title="Timeline técnica"
+      description="Histórico operacional do incidente com mudanças de status, ações e evidências."
+      summary={countLabel(orderedEvents.length, "evento", "eventos")}
+      action={<RefreshButton label="Atualizar timeline" onRefresh={onRefresh} />}
+    >
+      {orderedEvents.length ? (
+        <div className="space-y-4">
+          {orderedEvents.map((event, index) => {
+            const content = getEventContent(event, incident.source);
 
-        {orderedEvents.length ? (
-          <div className="space-y-4">
-            {orderedEvents.map((event, index) => {
-              const content = getEventContent(event, incident.source);
-
-              return (
-                <article
-                  key={event.id}
-                  className="grid gap-4 md:grid-cols-[9rem_minmax(0,1fr)]"
-                >
-                  <div className="text-sm text-base-content/55">
-                    {formatDate(event.createdAt)}
-                  </div>
-                  <div className="relative rounded-2xl border border-base-300 bg-base-100 p-4">
-                    {index < orderedEvents.length - 1 ? (
-                      <span className="absolute -bottom-5 left-5 h-5 w-px bg-base-300" />
-                    ) : null}
-                    <div className="flex items-start gap-3">
-                      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium">{content.title}</p>
-                          {getActorName(event) ? (
-                            <span className="badge badge-ghost badge-sm">
-                              {getActorName(event)}
-                            </span>
-                          ) : null}
-                          {event.type === "LOG_REGISTERED" &&
-                          typeof event.metadata?.level === "string" ? (
-                            <span className="badge badge-outline badge-sm">
-                              {event.metadata.level}
-                            </span>
-                          ) : null}
-                        </div>
-                        <p className="mt-1 text-sm leading-6 text-base-content/70">
-                          {content.description}
-                        </p>
-                        {content.metadata ? (
-                          <pre className="mt-3 overflow-x-auto rounded-xl bg-neutral p-4 text-xs text-neutral-content">
-                            {JSON.stringify(content.metadata, null, 2)}
-                          </pre>
+            return (
+              <article
+                key={event.id}
+                className="grid gap-4 md:grid-cols-[9rem_minmax(0,1fr)]"
+              >
+                <div className="text-sm text-base-content/55">
+                  {formatDate(event.createdAt)}
+                </div>
+                <div className="relative rounded-2xl border border-base-300 bg-base-100 p-4">
+                  {index < orderedEvents.length - 1 ? (
+                    <span className="absolute -bottom-5 left-5 h-5 w-px bg-base-300" />
+                  ) : null}
+                  <div className="flex items-start gap-3">
+                    <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{content.title}</p>
+                        {getActorName(event) ? (
+                          <span className="badge badge-ghost badge-sm">
+                            {getActorName(event)}
+                          </span>
+                        ) : null}
+                        {event.type === "LOG_REGISTERED" &&
+                        typeof event.metadata?.level === "string" ? (
+                          <span className="badge badge-outline badge-sm">
+                            {event.metadata.level}
+                          </span>
                         ) : null}
                       </div>
+                      <p className="mt-1 text-sm leading-6 text-base-content/70">
+                        {content.description}
+                      </p>
+                      {content.metadata ? (
+                        <pre className="mt-3 overflow-x-auto rounded-xl bg-neutral p-4 text-xs text-neutral-content">
+                          {JSON.stringify(content.metadata, null, 2)}
+                        </pre>
+                      ) : null}
                     </div>
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="app-surface-muted rounded-2xl border border-dashed p-5 text-sm text-base-content/60">
-            Nenhum histórico técnico disponível.
-          </div>
-        )}
-      </div>
-    </section>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="app-surface-muted rounded-2xl border border-dashed p-5 text-sm text-base-content/60">
+          Nenhum histórico técnico disponível.
+        </div>
+      )}
+    </CollapsibleCard>
   );
 }

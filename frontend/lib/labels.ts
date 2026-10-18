@@ -81,6 +81,11 @@ export const reportExecutionStatusLabel: Record<ReportExecutionStatus, string> =
   ESCALATED: "Escalado",
 };
 
+/** Quantidade com o substantivo concordando: "1 mensagem", "3 mensagens". */
+export function countLabel(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 /** Quem abriu o chamado, para mostrar ao lado da data ou da empresa. */
 export function incidentAuthorLabel(
   incident: Pick<Incident, "source" | "createdByName">,
