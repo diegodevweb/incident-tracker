@@ -139,3 +139,21 @@ body {
     0 28px 58px -32px rgb(0 0 0 / 0.62),
     0 16px 34px -24px rgb(0 0 0 / 0.48);
 }
+
+/* Impressão (o "Exportar PDF" do relatório): A4 deitado, para a tabela de
+   incidentes caber, e sem o fundo decorativo da tela. */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm 10mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+  }
+
+  body::before {
+    display: none;
+  }
+}

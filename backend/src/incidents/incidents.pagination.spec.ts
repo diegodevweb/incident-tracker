@@ -336,6 +336,58 @@ describe('IncidentsService pagination, report limits and user exposure', () => {
       expect(storage.getDownloadUrl).toHaveBeenCalledWith('incidents/fix.png');
       expect(result.correctiveActions).toHaveLength(1);
     });
+
+    it('formats dates in Brasília time, not UTC', async () => {
+      // 22h30 de 31/10 em Brasília; em UTC já é 01/11.
+      prisma.incident.findMany.mockResolvedValue([
+        incidentRow({ createdAt: new Date('2026-11-01T01:30:00Z') }),
+      ]);
+
+      const result = await report(
+        '2026-10-01T00:00:00.000-03:00',
+        '2026-10-31T23:59:59.999-03:00',
+      );
+
+      expect(result.entries[0]).toMatchObject({
+        createdAt: '2026-11-01T01:30:00.000Z',
+        year: 2026,
+        month: 'outubro',
+        day: 'sábado',
+        date: '31/10/2026',
+        time: '22:30:00',
+      });
+    });
+
+    it('labels a Brasília calendar month as that month', async () => {
+      const result = await report(
+        '2026-10-01T00:00:00.000-03:00',
+        '2026-10-31T23:59:59.999-03:00',
+      );
+
+      expect(result.monthLabel).toBe('outubro de 2026');
+    });
+
+    it('labels a range across months with both dates in Brasília time', async () => {
+      const result = await report(
+        '2026-10-15T00:00:00.000-03:00',
+        '2026-11-14T23:59:59.999-03:00',
+      );
+
+      expect(result.monthLabel).toBe('15/10/2026 a 14/11/2026');
+    });
+
+    it('sends the incident title on each entry', async () => {
+      prisma.incident.findMany.mockResolvedValue([
+        incidentRow({ title: 'Falha no checkout' }),
+      ]);
+
+      const result = await report(
+        '2026-10-01T00:00:00.000-03:00',
+        '2026-10-31T23:59:59.999-03:00',
+      );
+
+      expect(result.entries[0].title).toBe('Falha no checkout');
+    });
   });
 
   describe('POST /incidents/error-logs', () => {

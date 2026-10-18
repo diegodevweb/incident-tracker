@@ -5,17 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { Topbar } from "@/components/dashboard/topbar";
 import { fetchMonthlyReport } from "@/lib/api";
+import { reportMonthRange } from "@/lib/report-period";
 import { getInitials } from "@/lib/session";
 import type { MonthlyReport } from "@/lib/types";
+import { MonthlyReportPrint } from "./monthly-report-print";
 import { MonthlyReportView } from "./monthly-report-view";
 
-export function ReportsPageClient({
-  startDate,
-  endDate,
-}: {
-  startDate: string;
-  endDate: string;
-}) {
+export function ReportsPageClient({ month }: { month: string }) {
   const router = useRouter();
   const session = useAuthSession();
   const [report, setReport] = useState<MonthlyReport | null>(null);
@@ -36,10 +32,9 @@ export function ReportsPageClient({
 
     let isMounted = true;
 
-    void fetchMonthlyReport(
-      `${startDate}T00:00:00.000Z`,
-      `${endDate}T23:59:59.999Z`,
-    )
+    const { startDate, endDate } = reportMonthRange(month);
+
+    void fetchMonthlyReport(startDate, endDate)
       .then((data) => {
         if (!isMounted) return;
         setReport(data);
@@ -58,18 +53,15 @@ export function ReportsPageClient({
     return () => {
       isMounted = false;
     };
-  }, [endDate, router, session, startDate]);
+  }, [month, router, session]);
 
   // O relatório continua na tela enquanto busca: a ação preventiva em
   // digitação não se perde.
   async function refreshReport() {
+    const { startDate, endDate } = reportMonthRange(month);
+
     try {
-      setReport(
-        await fetchMonthlyReport(
-          `${startDate}T00:00:00.000Z`,
-          `${endDate}T23:59:59.999Z`,
-        ),
-      );
+      setReport(await fetchMonthlyReport(startDate, endDate));
       setRefreshError(null);
     } catch {
       setRefreshError("Não foi possível atualizar o relatório.");
@@ -78,15 +70,19 @@ export function ReportsPageClient({
 
   return (
     <div>
-      <Topbar
-        title="Relatórios"
-        subtitle="Consolidado mensal com incidentes atendidos, criticidade, SLA, ações e indicadores técnicos."
-        userInitials={getInitials(session?.user.name ?? "Usuário")}
-      />
+      <div className="print:hidden">
+        <Topbar
+          title="Relatórios"
+          subtitle="Consolidado mensal com incidentes atendidos, criticidade, SLA, ações e indicadores técnicos."
+          userInitials={getInitials(session?.user.name ?? "Usuário")}
+        />
+      </div>
 
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-6 print:p-0">
         {refreshError ? (
-          <div className="alert alert-error text-sm">{refreshError}</div>
+          <div className="alert alert-error text-sm print:hidden">
+            {refreshError}
+          </div>
         ) : null}
 
         {isLoading ? (
@@ -98,7 +94,14 @@ export function ReportsPageClient({
             {error ?? "Relatório indisponível."}
           </div>
         ) : (
-          <MonthlyReportView report={report} onReportRefresh={refreshReport} />
+          <>
+            <MonthlyReportPrint report={report} month={month} />
+            <MonthlyReportView
+              report={report}
+              month={month}
+              onReportRefresh={refreshReport}
+            />
+          </>
         )}
       </div>
     </div>

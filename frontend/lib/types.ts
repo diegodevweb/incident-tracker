@@ -202,7 +202,8 @@ export type SlaRule = {
 
 export type MonthlyReportEntry = {
   incidentId: number;
-  title?: string;
+  title: string;
+  createdAt: string;
   year: number;
   month: string;
   day: string;

@@ -19,9 +19,9 @@ export default async function DashboardLayout({
       {session?.user.mustChangePassword ? (
         <ForcedPasswordChange userName={session.user.name} />
       ) : (
-        <div className="min-h-screen md:grid md:grid-cols-[18rem_1fr]">
+        <div className="min-h-screen md:grid md:grid-cols-[18rem_1fr] print:block print:min-h-0">
           <Sidebar />
-          <main className="app-main min-h-screen">{children}</main>
+          <main className="app-main min-h-screen print:min-h-0">{children}</main>
         </div>
       )}
     </AuthSessionProvider>

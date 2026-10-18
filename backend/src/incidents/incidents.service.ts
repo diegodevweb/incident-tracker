@@ -88,6 +88,11 @@ const SLA_SELECT = {
   responsePriority: true,
 } satisfies Prisma.IncidentSelect;
 
+// O relatório mensal vale como documento para o cliente: datas, horas e a
+// competência saem no horário de Brasília, o mesmo do SLA. Em UTC, um chamado
+// das 22h do último dia do mês caía no mês seguinte.
+const REPORT_TIME_ZONE = 'America/Sao_Paulo';
+
 const withSla = <T extends SlaIncident>(incident: T, now = new Date()) => ({
   ...incident,
   sla: firstResponseSla(incident, now),
@@ -161,22 +166,21 @@ export class IncidentsService {
   }
 
   private buildPeriodLabel(startDate: Date, endDate: Date) {
-    const sameMonth =
-      startDate.getUTCFullYear() === endDate.getUTCFullYear() &&
-      startDate.getUTCMonth() === endDate.getUTCMonth();
-
-    if (sameMonth) {
-      return startDate.toLocaleDateString('pt-BR', {
+    const monthOf = (date: Date) =>
+      date.toLocaleDateString('pt-BR', {
         month: 'long',
         year: 'numeric',
-        timeZone: 'UTC',
+        timeZone: REPORT_TIME_ZONE,
       });
+
+    if (monthOf(startDate) === monthOf(endDate)) {
+      return monthOf(startDate);
     }
 
     return `${startDate.toLocaleDateString('pt-BR', {
-      timeZone: 'UTC',
+      timeZone: REPORT_TIME_ZONE,
     })} a ${endDate.toLocaleDateString('pt-BR', {
-      timeZone: 'UTC',
+      timeZone: REPORT_TIME_ZONE,
     })}`;
   }
 
@@ -452,28 +456,37 @@ export class IncidentsService {
 
       return {
         incidentId: incident.id,
-        year: createdAt.getUTCFullYear(),
+        title: incident.title,
+        createdAt: createdAt.toISOString(),
+        year: Number(
+          createdAt.toLocaleString('pt-BR', {
+            year: 'numeric',
+            timeZone: REPORT_TIME_ZONE,
+          }),
+        ),
         month: createdAt.toLocaleString('pt-BR', {
           month: 'long',
-          timeZone: 'UTC',
+          timeZone: REPORT_TIME_ZONE,
         }),
         day: createdAt.toLocaleString('pt-BR', {
           weekday: 'long',
-          timeZone: 'UTC',
+          timeZone: REPORT_TIME_ZONE,
         }),
-        date: createdAt.toLocaleDateString('pt-BR', { timeZone: 'UTC' }),
+        date: createdAt.toLocaleDateString('pt-BR', {
+          timeZone: REPORT_TIME_ZONE,
+        }),
         time: createdAt.toLocaleTimeString('pt-BR', {
-          timeZone: 'UTC',
+          timeZone: REPORT_TIME_ZONE,
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
         }),
         minute: createdAt.toLocaleTimeString('pt-BR', {
-          timeZone: 'UTC',
+          timeZone: REPORT_TIME_ZONE,
           minute: '2-digit',
         }),
         second: createdAt.toLocaleTimeString('pt-BR', {
-          timeZone: 'UTC',
+          timeZone: REPORT_TIME_ZONE,
           second: '2-digit',
         }),
         errorType: incident.priority,
