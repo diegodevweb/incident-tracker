@@ -1,6 +1,38 @@
 @import "tailwindcss";
+/* O light vem do bloco daisyui/theme abaixo; listado aqui, o embutido venceria pela especificidade. */
 @plugin "daisyui" {
-  themes: light --default, dark --prefersdark;
+  themes: dark --prefersdark;
+}
+
+/*
+  Tema claro: base cinza-azulada fria e texto azul-marinho, para a cor ficar com
+  o que é sinal (status, prioridade, SLA). Os tons semânticos são escuros o
+  bastante para texto branco sobre eles e para texto colorido em badge outline
+  ou soft passarem no contraste AA. O que não está aqui é herdado do light do daisyUI.
+*/
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  color-scheme: light;
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(97.2% 0.006 255);
+  --color-base-300: oklch(92.5% 0.01 255);
+  --color-base-content: oklch(25% 0.03 262);
+  --color-primary: oklch(47% 0.2 272);
+  --color-primary-content: oklch(100% 0 0);
+  /* Só a prioridade Alta/Erro usa secondary: laranja entre o aviso e o crítico. */
+  --color-secondary: oklch(55% 0.17 40);
+  --color-secondary-content: oklch(100% 0 0);
+  --color-neutral: oklch(27% 0.03 262);
+  --color-neutral-content: oklch(96% 0.006 255);
+  --color-info: oklch(52% 0.14 245);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(51% 0.12 160);
+  --color-success-content: oklch(100% 0 0);
+  --color-warning: oklch(55% 0.115 82);
+  --color-warning-content: oklch(100% 0 0);
+  --color-error: oklch(53% 0.19 25);
+  --color-error-content: oklch(100% 0 0);
 }
 
 @theme inline {
@@ -9,18 +41,16 @@
 }
 
 :root {
-  --app-bg: #f5f4ef;
-  --app-shell: rgb(255 255 255 / 0.7);
-  --app-surface: rgb(255 255 255 / 0.82);
-  --app-surface-muted: #ece9e0;
-  --app-border: rgb(24 24 27 / 0.08);
-  --app-border-strong: rgb(24 24 27 / 0.12);
+  --app-bg: oklch(96.2% 0.008 255);
+  --app-shell: rgb(255 255 255 / 0.9);
+  --app-surface: #ffffff;
+  --app-surface-muted: var(--color-base-200);
+  --app-border: rgb(26 34 48 / 0.07);
+  --app-border-strong: rgb(26 34 48 / 0.11);
   --app-shadow-card:
-    0 20px 45px -28px rgb(15 23 42 / 0.22),
-    0 10px 24px -18px rgb(15 23 42 / 0.16);
-  --app-shadow-shell:
-    0 18px 38px -30px rgb(15 23 42 / 0.18),
-    0 8px 20px -18px rgb(15 23 42 / 0.12);
+    0 1px 2px rgb(16 24 40 / 0.04),
+    0 2px 8px -2px rgb(16 24 40 / 0.06);
+  --app-shadow-shell: 0 1px 2px rgb(16 24 40 / 0.03);
 }
 
 [data-theme="dark"] {
@@ -45,6 +75,10 @@ body {
 
 body {
   background-color: var(--app-bg);
+}
+
+/* O brilho de fundo é só do tema escuro; no claro ele sujava o cinza de rosa e roxo. */
+[data-theme="dark"] body {
   background-image:
     radial-gradient(circle at top left, color-mix(in oklab, var(--color-primary) 9%, transparent), transparent 28%),
     radial-gradient(circle at bottom right, color-mix(in oklab, var(--color-secondary) 10%, transparent), transparent 32%),
@@ -52,7 +86,7 @@ body {
   background-attachment: fixed;
 }
 
-body::before {
+[data-theme="dark"] body::before {
   content: "";
   position: fixed;
   inset: 0;
@@ -96,8 +130,8 @@ body::before {
 .app-stat-card:hover {
   transform: translateY(-2px);
   box-shadow:
-    0 24px 48px -28px rgb(15 23 42 / 0.26),
-    0 14px 30px -24px rgb(15 23 42 / 0.18);
+    0 2px 4px rgb(16 24 40 / 0.05),
+    0 12px 24px -12px rgb(16 24 40 / 0.14);
 }
 
 [data-theme="dark"] .app-stat-card:hover {
