@@ -7,6 +7,7 @@ import {
 import type { Incident } from "@/lib/types";
 import { IncidentClientActions } from "./incident-client-actions";
 import { IncidentPriorityBadge } from "./incident-priority-badge";
+import { IncidentSlaCard } from "./incident-sla";
 import { IncidentStatusBadge } from "./incident-status-badge";
 
 function formatDate(value: string) {
@@ -100,6 +101,8 @@ export function IncidentDetails({
                 </p>
               </div>
             </div>
+
+            <IncidentSlaCard incident={incident} />
           </div>
         </div>
       </div>

@@ -61,14 +61,25 @@ type IncidentSummary = {
   createdBy: { id: number; name: string } | null;
 };
 
+type IncidentSla = {
+  state: string;
+  priority: string;
+  target: string;
+  respondedAt: string | null;
+};
+
 type IncidentDetail = IncidentSummary & {
   status: string;
+  sla: IncidentSla;
   attachments: { url: string; filename: string; category: string }[];
   events: { type: string; actorName: string | null }[];
   comments: { message: string; authorName: string; authorRole: string }[];
 };
 
-type Page = { items: IncidentSummary[]; total: number };
+type Page = {
+  items: (IncidentSummary & { sla: IncidentSla })[];
+  total: number;
+};
 
 type Account = {
   name: string;
@@ -480,6 +491,71 @@ describe('API (e2e)', () => {
     );
     expect(marked.unreadCount).toBe(0);
     expect((await notificationsOf(ana.token)).unreadCount).toBe(3);
+  });
+
+  it('runs the first response SLA until the first admin answer', async () => {
+    const { data: created } = bodyOf<{ data: IncidentDetail }>(
+      await http()
+        .post('/incidents')
+        .set(bearer(carla.token))
+        .field('title', 'Emissão parada')
+        .field('description', 'Nenhuma nota sai desde as 9h')
+        .field('environment', 'production')
+        .field('priority', 'CRITICAL')
+        .attach('attachments', png, {
+          filename: 'parada.png',
+          contentType: 'image/png',
+        })
+        .expect(201),
+    );
+    // Recém-aberto, sobra o prazo inteiro, a qualquer hora do dia.
+    expect(created.sla).toMatchObject({
+      state: 'ON_TIME',
+      priority: 'CRITICAL',
+      target: 'até 2h úteis',
+      respondedAt: null,
+    });
+
+    const listed = (await listIncidents(carla.token)).items.find(
+      (item) => item.id === created.id,
+    );
+    expect(listed?.sla).toMatchObject({ state: 'ON_TIME' });
+
+    // Mudar só a criticidade não é resposta: o prazo passa a seguir a nova.
+    await http()
+      .patch(`/incidents/${created.id}`)
+      .set(bearer(admin.token))
+      .send({ priority: 'ERROR' })
+      .expect(200);
+    expect((await getIncident(created.id, carla.token)).sla).toMatchObject({
+      state: 'ON_TIME',
+      priority: 'ERROR',
+      respondedAt: null,
+    });
+
+    // A mudança de status responde, com a criticidade de antes da edição.
+    await http()
+      .patch(`/incidents/${created.id}`)
+      .set(bearer(admin.token))
+      .send({ status: 'IN_PROGRESS', priority: 'INFO' })
+      .expect(200);
+    const answered = await getIncident(created.id, carla.token);
+    expect(answered.sla).toMatchObject({
+      state: 'MET',
+      priority: 'ERROR',
+      target: 'até 4h úteis',
+    });
+    expect(answered.sla.respondedAt).not.toBeNull();
+
+    // Depois da resposta, nada muda o resultado.
+    await http()
+      .post(`/incidents/${created.id}/comments`)
+      .set(bearer(admin.token))
+      .send({ message: 'Normalizado' })
+      .expect(201);
+    expect((await getIncident(created.id, carla.token)).sla).toEqual(
+      answered.sla,
+    );
   });
 
   it("opens incidents from the webhook for the key's company", async () => {

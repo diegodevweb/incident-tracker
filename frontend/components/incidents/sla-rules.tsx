@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { fetchSlaRules } from "@/lib/api";
 import { getIncidentPriorityLabel } from "@/lib/labels";
 import type { IncidentLevel, IncidentSource, SlaRule } from "@/lib/types";
+import { businessHoursNote } from "./incident-sla";
 
 // A tabela não muda durante a sessão: uma busca serve todas as telas.
 let slaRulesRequest: Promise<SlaRule[]> | null = null;
@@ -58,28 +59,31 @@ export function SlaRuleList({
   }
 
   return (
-    <ul className="space-y-2">
-      {rules.map((rule) => (
-        <li
-          key={rule.priority}
-          className={`rounded-2xl border p-3 text-sm ${
-            rule.priority === current
-              ? "border-primary/40 bg-primary/5"
-              : "app-surface-muted"
-          }`}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-medium">
-              {getIncidentPriorityLabel(rule.priority, source)}
-            </span>
-            <span className="text-base-content/60">
-              Primeira resposta {rule.firstResponseTarget}
-            </span>
-          </div>
-          <p className="mt-1">{rule.title}</p>
-          <p className="mt-1 text-base-content/60">{rule.description}</p>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-2">
+      <ul className="space-y-2">
+        {rules.map((rule) => (
+          <li
+            key={rule.priority}
+            className={`rounded-2xl border p-3 text-sm ${
+              rule.priority === current
+                ? "border-primary/40 bg-primary/5"
+                : "app-surface-muted"
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">
+                {getIncidentPriorityLabel(rule.priority, source)}
+              </span>
+              <span className="text-base-content/60">
+                Primeira resposta {rule.firstResponseTarget}
+              </span>
+            </div>
+            <p className="mt-1">{rule.title}</p>
+            <p className="mt-1 text-base-content/60">{rule.description}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-base-content/60">{businessHoursNote}</p>
+    </div>
   );
 }

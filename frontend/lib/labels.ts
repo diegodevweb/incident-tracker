@@ -1,4 +1,5 @@
 import type {
+  FirstResponseSlaState,
   Incident,
   IncidentEnvironment,
   IncidentFilter,
@@ -28,6 +29,15 @@ export const incidentStatusLabel: Record<IncidentStatus, string> = {
   PENDING: "Pendente",
   IN_PROGRESS: "Em andamento",
   RESOLVED: "Resolvido",
+};
+
+export const firstResponseSlaStateLabel: Record<FirstResponseSlaState, string> = {
+  ON_TIME: "No prazo",
+  AT_RISK: "Vence em breve",
+  BREACHED: "Atrasado",
+  MET: "Respondido no prazo",
+  MISSED: "Respondido fora do prazo",
+  CLOSED: "Resolvido sem resposta",
 };
 
 export const incidentSourceLabel: Record<IncidentSource, string> = {

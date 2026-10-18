@@ -478,6 +478,9 @@ describe('IncidentsService client actions', () => {
         comments: {
           create: { authorId: admin.sub, message: 'Estamos verificando' },
         },
+        // A primeira mensagem da equipe é a primeira resposta do SLA.
+        firstRespondedAt: expect.any(Date) as Date,
+        responsePriority: IncidentLevel.ERROR,
       });
     });
 

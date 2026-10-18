@@ -50,6 +50,11 @@ import {
   type IncidentNotice,
   noticesForIncidentUpdate,
 } from './incident-notifications';
+import {
+  FIRST_RESPONSE_TARGET_LABEL,
+  type SlaIncident,
+  firstResponseSla,
+} from './sla';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import type { AuthenticatedWebhookKey } from '../webhook-keys/webhook-keys.service';
@@ -75,6 +80,41 @@ type IncidentDetailRow = Prisma.IncidentGetPayload<{
   include: typeof INCIDENT_DETAIL_INCLUDE;
 }>;
 
+const SLA_SELECT = {
+  createdAt: true,
+  priority: true,
+  status: true,
+  firstRespondedAt: true,
+  responsePriority: true,
+} satisfies Prisma.IncidentSelect;
+
+const withSla = <T extends SlaIncident>(incident: T, now = new Date()) => ({
+  ...incident,
+  sla: firstResponseSla(incident, now),
+});
+
+// Entram os chamados que já têm resultado (respondidos e vencidos sem
+// resposta), menos os abertos pela equipe, que nascem respondidos.
+const firstResponseOnTimeRate = (incidents: SlaIncident[], now: Date) => {
+  const states = incidents
+    .filter(
+      (incident) =>
+        incident.firstRespondedAt?.getTime() !== incident.createdAt.getTime(),
+    )
+    .map((incident) => firstResponseSla(incident, now).state)
+    .filter(
+      (state) => state === 'MET' || state === 'MISSED' || state === 'BREACHED',
+    );
+
+  if (!states.length) {
+    return '-';
+  }
+
+  const met = states.filter((state) => state === 'MET').length;
+
+  return `${Math.round((met / states.length) * 100)}%`;
+};
+
 const toCounts = <K extends string>(
   keys: readonly K[],
   rows: { value: K; count: number }[],
@@ -92,21 +132,8 @@ export class IncidentsService {
     private readonly storageService: StorageService,
   ) {}
 
-  private readonly firstResponseTargetByPriority: Record<
-    IncidentLevel,
-    string
-  > = {
-    CRITICAL: 'até 2h úteis',
-    ERROR: 'até 4h úteis',
-    WARNING: 'até 1 dia útil',
-    INFO: 'até 2 dias úteis',
-  };
-
   private readonly slaRules = (
-    Object.entries(this.firstResponseTargetByPriority) as [
-      IncidentLevel,
-      string,
-    ][]
+    Object.entries(FIRST_RESPONSE_TARGET_LABEL) as [IncidentLevel, string][]
   ).map(([priority, firstResponseTarget]) => ({
     priority,
     firstResponseTarget,
@@ -197,39 +224,59 @@ export class IncidentsService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
 
-    const [items, total, byStatus, byPriority, bySource] = await Promise.all([
-      this.prisma.incident.findMany({
-        where,
-        // A lista não usa logs nem anexos: ficam só no detalhe, que também assina as URLs.
-        include: {
-          company: { select: PUBLIC_COMPANY_SELECT },
-          createdBy: { select: PUBLIC_USER_SELECT },
-        },
-        // O id desempata createdAt iguais para uma página não repetir nem pular linhas.
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-      this.prisma.incident.count({ where }),
-      this.prisma.incident.groupBy({
-        by: ['status'],
-        where,
-        _count: { _all: true },
-      }),
-      this.prisma.incident.groupBy({
-        by: ['priority'],
-        where,
-        _count: { _all: true },
-      }),
-      this.prisma.incident.groupBy({
-        by: ['source'],
-        where,
-        _count: { _all: true },
-      }),
-    ]);
+    const [items, total, byStatus, byPriority, bySource, awaitingResponse] =
+      await Promise.all([
+        this.prisma.incident.findMany({
+          where,
+          // A lista não usa logs nem anexos: ficam só no detalhe, que também assina as URLs.
+          include: {
+            company: { select: PUBLIC_COMPANY_SELECT },
+            createdBy: { select: PUBLIC_USER_SELECT },
+          },
+          // O id desempata createdAt iguais para uma página não repetir nem pular linhas.
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        this.prisma.incident.count({ where }),
+        this.prisma.incident.groupBy({
+          by: ['status'],
+          where,
+          _count: { _all: true },
+        }),
+        this.prisma.incident.groupBy({
+          by: ['priority'],
+          where,
+          _count: { _all: true },
+        }),
+        this.prisma.incident.groupBy({
+          by: ['source'],
+          where,
+          _count: { _all: true },
+        }),
+        // O SLA depende do expediente, que o banco não sabe contar: os que
+        // esperam resposta vêm para cá. São só a fila sem resposta, não o histórico.
+        this.prisma.incident.findMany({
+          where: {
+            AND: [
+              where,
+              {
+                firstRespondedAt: null,
+                status: { not: IncidentStatus.RESOLVED },
+              },
+            ],
+          },
+          select: SLA_SELECT,
+        }),
+      ]);
+
+    const now = new Date();
+    const awaitingStates = awaitingResponse.map(
+      (incident) => firstResponseSla(incident, now).state,
+    );
 
     return {
-      items,
+      items: items.map((incident) => withSla(incident, now)),
       page,
       pageSize,
       total,
@@ -256,6 +303,11 @@ export class IncidentsService {
             count: row._count._all,
           })),
         ),
+        sla: {
+          breached: awaitingStates.filter((state) => state === 'BREACHED')
+            .length,
+          atRisk: awaitingStates.filter((state) => state === 'AT_RISK').length,
+        },
       },
     };
   }
@@ -284,6 +336,8 @@ export class IncidentsService {
     );
 
     const status = data.status ?? IncidentStatus.OPEN;
+    const priority = data.priority ?? IncidentLevel.ERROR;
+    const createdAt = new Date();
 
     const incident = await this.withUploadCleanup(generalAttachments, () =>
       this.prisma.incident.create({
@@ -291,7 +345,12 @@ export class IncidentsService {
           title: data.title,
           description: data.description,
           status,
-          priority: data.priority ?? IncidentLevel.ERROR,
+          priority,
+          createdAt,
+          // Quando é a equipe que abre, o chamado já nasce respondido.
+          ...(user.role === UserRole.ADMIN
+            ? { firstRespondedAt: createdAt, responsePriority: priority }
+            : {}),
           source: IncidentSource.DASHBOARD,
           environment: data.environment,
           companyId,
@@ -299,7 +358,7 @@ export class IncidentsService {
           logs: {
             create: {
               message: data.description,
-              level: data.priority ?? IncidentLevel.ERROR,
+              level: priority,
               occurredAt: new Date(),
             },
           },
@@ -385,9 +444,11 @@ export class IncidentsService {
       ),
     );
 
+    const now = new Date();
     const entries = incidentsWithAttachmentUrls.map((incident) => {
       const createdAt = incident.createdAt;
       const latestLog = incident.logs[0];
+      const sla = firstResponseSla(incident, now);
 
       return {
         incidentId: incident.id,
@@ -417,7 +478,8 @@ export class IncidentsService {
         }),
         errorType: incident.priority,
         source: incident.source,
-        slaTarget: this.firstResponseTargetByPriority[incident.priority],
+        slaTarget: sla.target,
+        slaState: sla.state,
         priority: incident.priority,
         description: incident.description,
         status: incident.status,
@@ -469,6 +531,11 @@ export class IncidentsService {
         createdAt: action.createdAt.toISOString(),
       })),
       technicalIndicators: [
+        {
+          label: 'Primeira resposta no prazo',
+          value: firstResponseOnTimeRate(incidentsWithAttachmentUrls, now),
+          status: 'ATTENDED',
+        },
         {
           label: 'Incidentes atendidos',
           value: String(incidentsWithAttachmentUrls.length),
@@ -556,6 +623,9 @@ export class IncidentsService {
           data: {
             ...(data.status ? { status: data.status } : {}),
             ...(data.priority ? { priority: data.priority } : {}),
+            ...(data.status && data.status !== current.status
+              ? this.firstResponseWrite(current, user)
+              : {}),
             ...(correctiveActions !== undefined ? { correctiveActions } : {}),
             ...(uploadedCorrectiveAttachments.length
               ? { attachments: { create: uploadedCorrectiveAttachments } }
@@ -612,7 +682,7 @@ export class IncidentsService {
     data: CreateIncidentCommentDto,
     user: JwtPayload,
   ) {
-    const { companyId } = await this.findAccessibleIncident(id, user);
+    const current = await this.findAccessibleIncident(id, user);
 
     if (user.role !== UserRole.ADMIN) {
       const adminMessages = await this.prisma.incidentComment.count({
@@ -630,7 +700,8 @@ export class IncidentsService {
       where: { id },
       data: {
         comments: { create: { authorId: user.sub, message: data.message } },
-        ...(await this.companyNoticesWrite(companyId, user, [
+        ...this.firstResponseWrite(current, user),
+        ...(await this.companyNoticesWrite(current.companyId, user, [
           { type: NotificationType.COMMENT_ADDED },
         ])),
       },
@@ -799,7 +870,12 @@ export class IncidentsService {
   private async findAccessibleIncident(id: number, user: JwtPayload) {
     const incident = await this.prisma.incident.findUnique({
       where: { id },
-      select: { id: true, companyId: true },
+      select: {
+        id: true,
+        companyId: true,
+        priority: true,
+        firstRespondedAt: true,
+      },
     });
 
     if (!incident) {
@@ -860,6 +936,23 @@ export class IncidentsService {
     if (!attachmentCount) {
       throw new BadRequestException('Anexe ao menos um print do problema');
     }
+  }
+
+  // A primeira mensagem ou mudança de status de um admin para o relógio do SLA.
+  // Fica gravada a criticidade de antes desta edição: se o admin muda a
+  // criticidade junto com a resposta, o prazo que vale é o que o cliente via.
+  private firstResponseWrite(
+    incident: Pick<SlaIncident, 'priority' | 'firstRespondedAt'>,
+    user: JwtPayload,
+  ): Pick<Prisma.IncidentUpdateInput, 'firstRespondedAt' | 'responsePriority'> {
+    if (user.role !== UserRole.ADMIN || incident.firstRespondedAt) {
+      return {};
+    }
+
+    return {
+      firstRespondedAt: new Date(),
+      responsePriority: incident.priority,
+    };
   }
 
   // Avisa todos os usuários ativos da empresa, gravando junto com a mudança
@@ -996,7 +1089,7 @@ export class IncidentsService {
     const { events, comments, ...rest } = incident;
 
     return {
-      ...(await this.resolveIncidentAttachmentUrls(rest)),
+      ...(await this.resolveIncidentAttachmentUrls(withSla(rest))),
       events: events.map(toPublicIncidentEvent),
       comments: comments.map(toPublicIncidentComment),
     };

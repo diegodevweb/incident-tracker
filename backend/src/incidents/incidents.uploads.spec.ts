@@ -1,5 +1,5 @@
 import { UnsupportedMediaTypeException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { IncidentLevel, IncidentStatus, UserRole } from '@prisma/client';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { IncidentsService } from './incidents.service';
@@ -52,6 +52,11 @@ describe('IncidentsService uploads', () => {
   const incidentRow = {
     id: 10,
     companyId: 1,
+    createdAt: new Date('2026-10-05T12:00:00Z'),
+    priority: IncidentLevel.ERROR,
+    status: IncidentStatus.OPEN,
+    firstRespondedAt: null,
+    responsePriority: null,
     attachments: [],
     logs: [],
     events: [],

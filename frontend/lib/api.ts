@@ -4,6 +4,7 @@ import type {
   Company,
   CompanyListPage,
   CompanyUser,
+  FirstResponseSla,
   Incident,
   IncidentComment,
   IncidentEnvironment,
@@ -57,6 +58,7 @@ type BackendIncident = {
     metadata?: Record<string, unknown> | null;
   }[];
   comments?: IncidentComment[];
+  sla: FirstResponseSla;
 };
 
 /**
@@ -159,6 +161,7 @@ function mapIncident(incident: BackendIncident): Incident {
       metadata: event.metadata ?? undefined,
     })),
     comments: incident.comments ?? [],
+    sla: incident.sla,
   };
 }
 

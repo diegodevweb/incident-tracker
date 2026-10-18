@@ -9,6 +9,15 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.types';
 import { IncidentsService } from './incidents.service';
 
+// O que o SLA lê do chamado; o banco sempre devolve.
+const slaFields = {
+  createdAt: new Date('2026-10-05T12:00:00Z'),
+  priority: IncidentLevel.ERROR,
+  status: IncidentStatus.OPEN,
+  firstRespondedAt: null,
+  responsePriority: null,
+};
+
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const png = (originalname: string) => ({
   buffer: PNG,
@@ -56,6 +65,7 @@ describe('IncidentsService access rules', () => {
       incident: {
         create: jest.fn().mockResolvedValue({
           id: 10,
+          ...slaFields,
           attachments: [],
           logs: [],
           events: [],
@@ -99,6 +109,7 @@ describe('IncidentsService access rules', () => {
   const incidentOf = (companyId: number) => ({
     id: 5,
     companyId,
+    ...slaFields,
     attachments: [],
     logs: [],
     events: [],
