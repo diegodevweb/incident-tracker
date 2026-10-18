@@ -91,7 +91,6 @@ function IncidentFollowUp({
   const solutionAttachments = getCorrectiveAttachments(incident);
   const resolved = incident.status === "RESOLVED";
   const slaRules = useSlaRules();
-  const currentRule = slaRules?.find((rule) => rule.priority === incident.priority);
 
   return (
     <section className="app-surface card border">
@@ -124,11 +123,6 @@ function IncidentFollowUp({
               priority={incident.priority}
               source={incident.source}
             />
-            {currentRule ? (
-              <span className="text-sm text-base-content/60">
-                Primeira resposta {currentRule.firstResponseTarget}
-              </span>
-            ) : null}
           </div>
           <details className="app-surface-muted rounded-2xl border p-4">
             <summary className="cursor-pointer text-sm font-medium">
@@ -281,6 +275,13 @@ function IncidentManagementForm({
               </select>
             </label>
           </div>
+
+          {incident.sla.respondedAt ? null : (
+            <p className="text-sm text-base-content/60">
+              Ainda sem primeira resposta: mudar o status ou escrever na conversa
+              registra a resposta do SLA. Até lá, o prazo segue a criticidade.
+            </p>
+          )}
 
           <label className="form-control">
             <span className="label-text mb-2">Ações corretivas</span>

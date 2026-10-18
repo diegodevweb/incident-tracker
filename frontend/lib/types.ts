@@ -53,6 +53,33 @@ export type IncidentComment = {
   authorRole: UserRole;
 };
 
+export type FirstResponseSlaState =
+  | "ON_TIME"
+  | "AT_RISK"
+  | "BREACHED"
+  | "MET"
+  | "MISSED"
+  | "CLOSED";
+
+/**
+ * SLA de primeira resposta, calculado pela API na hora da leitura. Os minutos
+ * são de expediente (seg. a sex., 8h às 18h de Brasília, sem feriados).
+ */
+export type FirstResponseSla = {
+  state: FirstResponseSlaState;
+  /** A criticidade que define o prazo: a da primeira resposta, ou a atual. */
+  priority: IncidentLevel;
+  target: string;
+  dueAt: string;
+  respondedAt: string | null;
+  /** Até o prazo, enquanto o relógio corre. */
+  remainingMinutes: number | null;
+  /** Além do prazo: até agora (BREACHED) ou até a resposta (MISSED). */
+  overdueMinutes: number | null;
+  /** Da abertura à primeira resposta. */
+  responseMinutes: number | null;
+};
+
 export type Incident = {
   id: number;
   title: string;
@@ -70,6 +97,7 @@ export type Incident = {
   attachments: IncidentAttachment[];
   events?: IncidentEvent[];
   comments: IncidentComment[];
+  sla: FirstResponseSla;
 };
 
 export type NotificationType =
@@ -185,6 +213,7 @@ export type MonthlyReportEntry = {
   errorType: IncidentLevel;
   source: IncidentSource;
   slaTarget: string;
+  slaState: FirstResponseSlaState;
   priority: IncidentLevel;
   description: string;
   status?: IncidentStatus;
@@ -231,6 +260,8 @@ export type IncidentListSummary = {
   byStatus: Record<IncidentStatus, number>;
   byPriority: Record<IncidentLevel, number>;
   bySource: Record<IncidentSource, number>;
+  /** Chamados sem resposta do conjunto filtrado, pelo estado do SLA. */
+  sla: { breached: number; atRisk: number };
 };
 
 export type IncidentListPage = {

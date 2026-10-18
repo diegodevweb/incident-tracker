@@ -3,6 +3,7 @@ import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { incidentAuthorLabel, incidentSourceLabel } from "@/lib/labels";
 import type { Incident } from "@/lib/types";
 import { IncidentPriorityBadge } from "./incident-priority-badge";
+import { IncidentSlaSummary } from "./incident-sla";
 import { IncidentStatusBadge } from "./incident-status-badge";
 
 function formatDate(value: string) {
@@ -28,6 +29,7 @@ export function IncidentList({
               <th>Ticket</th>
               <th>Status</th>
               <th>Prioridade</th>
+              <th>SLA de resposta</th>
               <th>Origem</th>
               <th>Cliente</th>
               <th>
@@ -60,6 +62,9 @@ export function IncidentList({
                     priority={incident.priority}
                     source={incident.source}
                   />
+                </td>
+                <td>
+                  <IncidentSlaSummary sla={incident.sla} />
                 </td>
                 <td>
                   <div className="badge badge-outline">

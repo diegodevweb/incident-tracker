@@ -158,8 +158,9 @@ export function IncidentsPageClient({
   const byStatus = listPage?.summary.byStatus;
   const byPriority = listPage?.summary.byPriority;
   const bySource = listPage?.summary.bySource;
+  const sla = listPage?.summary.sla;
 
-  const summaryCards =
+  const summaryCards: { label: string; value: number; hint?: string }[] =
     activeRole === "CLIENT"
       ? [
           { label: "Tickets da empresa", value: total },
@@ -172,6 +173,11 @@ export function IncidentsPageClient({
           { label: "Abertos", value: byStatus?.OPEN ?? 0 },
           { label: "Críticos", value: byPriority?.CRITICAL ?? 0 },
           { label: "Webhook", value: bySource?.WEBHOOK ?? 0 },
+          {
+            label: "Atrasados sem resposta",
+            value: sla?.breached ?? 0,
+            hint: `${sla?.atRisk ?? 0} vencendo em breve`,
+          },
         ];
 
   const activeParams = {
@@ -195,7 +201,11 @@ export function IncidentsPageClient({
       />
 
       <div className="space-y-6 p-6">
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section
+          className={`grid gap-4 md:grid-cols-2 ${
+            summaryCards.length > 4 ? "xl:grid-cols-5" : "xl:grid-cols-4"
+          }`}
+        >
           {summaryCards.map((card) => (
             <div
               key={card.label}
@@ -205,6 +215,9 @@ export function IncidentsPageClient({
               <p className="mt-3 text-4xl font-semibold tracking-tight">
                 {card.value}
               </p>
+              {card.hint ? (
+                <p className="mt-1 text-sm text-base-content/60">{card.hint}</p>
+              ) : null}
             </div>
           ))}
         </section>
