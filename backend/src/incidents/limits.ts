@@ -6,6 +6,8 @@ export const MAX_CORRECTIVE_ATTACHMENTS = 6;
 // Tamanhos das colunas VARCHAR(191) do Prisma/MySQL e do campo TEXT usado nos DTOs.
 export const MAX_VARCHAR_LENGTH = 191;
 export const MAX_LONG_TEXT_LENGTH = 10_000;
+// O motivo de uma exclusão é uma frase ou duas, não um relato.
+export const MAX_DELETION_REASON_LENGTH = 1_000;
 
 export const uploadLimits = (maxFiles: number) => ({
   limits: { fileSize: MAX_UPLOAD_FILE_BYTES, files: maxFiles },

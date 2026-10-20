@@ -3,6 +3,7 @@ import {
   IncidentEventType,
   IncidentLevel,
   IncidentStatus,
+  UserRole,
 } from '@prisma/client';
 import { incidentUpdateEvents, toPublicIncidentEvent } from './incident-events';
 
@@ -31,6 +32,31 @@ describe('incidentUpdateEvents', () => {
     expect(
       incidentUpdateEvents({
         current: { ...current, correctiveActions: 'Reprocessado' },
+        attachments: [],
+        actorId,
+      }),
+    ).toEqual([]);
+  });
+
+  it.each([
+    [true, null, IncidentEventType.N1_CLASSIFIED],
+    [false, new Date('2026-10-10T12:00:00Z'), IncidentEventType.N1_REMOVED],
+  ])('records n1=%s as its own event', (n1, n1ClassifiedAt, type) => {
+    expect(
+      incidentUpdateEvents({
+        current: { ...current, n1ClassifiedAt },
+        n1,
+        attachments: [],
+        actorId,
+      }),
+    ).toEqual([{ type, actorId }]);
+  });
+
+  it('records nothing when the N1 classification stays the same', () => {
+    expect(
+      incidentUpdateEvents({
+        current: { ...current, n1ClassifiedAt: null },
+        n1: false,
         attachments: [],
         actorId,
       }),
@@ -207,7 +233,10 @@ describe('toPublicIncidentEvent', () => {
 
   it('exposes the author by name only', () => {
     expect(
-      toPublicIncidentEvent({ ...event, actor: { name: 'Ana Suporte' } }),
+      toPublicIncidentEvent({
+        ...event,
+        actor: { name: 'Ana Suporte', role: UserRole.ADMIN },
+      }),
     ).toEqual({
       id: 3,
       type: IncidentEventType.STATUS_CHANGED,

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -26,6 +27,7 @@ import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
 import { CreateIncidentCommentDto } from './dto/create-incident-comment.dto';
+import { DeleteIncidentDto } from './dto/delete-incident.dto';
 import { StorageService } from '../storage/storage.types';
 import { detectImageType } from '../storage/detect-image-type';
 import { truncateFilename } from './filenames';
@@ -54,6 +56,7 @@ import {
   FIRST_RESPONSE_TARGET_LABEL,
   type SlaIncident,
   firstResponseSla,
+  responseSla,
 } from './sla';
 import { randomUUID } from 'node:crypto';
 import { JwtPayload } from '../auth/jwt-payload.interface';
@@ -70,6 +73,7 @@ type UploadedAttachment = {
 const INCIDENT_DETAIL_INCLUDE = {
   company: { select: PUBLIC_COMPANY_SELECT },
   createdBy: { select: PUBLIC_USER_SELECT },
+  deletedBy: { select: PUBLIC_USER_SELECT },
   attachments: true,
   logs: { orderBy: { occurredAt: 'desc' } },
   events: INCIDENT_EVENTS_QUERY,
@@ -86,6 +90,10 @@ const SLA_SELECT = {
   status: true,
   firstRespondedAt: true,
   responsePriority: true,
+  reopenedAt: true,
+  reopenRespondedAt: true,
+  reopenResponsePriority: true,
+  n1ClassifiedAt: true,
 } satisfies Prisma.IncidentSelect;
 
 // O relatório mensal vale como documento para o cliente: datas, horas e a
@@ -93,17 +101,20 @@ const SLA_SELECT = {
 // das 22h do último dia do mês caía no mês seguinte.
 const REPORT_TIME_ZONE = 'America/Sao_Paulo';
 
+// O prazo que corre agora: o da reabertura, se houve; nulo nos N1.
 const withSla = <T extends SlaIncident>(incident: T, now = new Date()) => ({
   ...incident,
-  sla: firstResponseSla(incident, now),
+  sla: responseSla(incident, now),
 });
 
 // Entram os chamados que já têm resultado (respondidos e vencidos sem
-// resposta), menos os abertos pela equipe, que nascem respondidos.
+// resposta), menos os abertos pela equipe, que nascem respondidos, e os N1,
+// que não são atendidos pela equipe.
 const firstResponseOnTimeRate = (incidents: SlaIncident[], now: Date) => {
   const states = incidents
     .filter(
       (incident) =>
+        !incident.n1ClassifiedAt &&
         incident.firstRespondedAt?.getTime() !== incident.createdAt.getTime(),
     )
     .map((incident) => firstResponseSla(incident, now).state)
@@ -127,6 +138,20 @@ const toCounts = <K extends string>(
   Object.fromEntries(
     keys.map((key) => [key, rows.find((row) => row.value === key)?.count ?? 0]),
   ) as Record<K, number>;
+
+// O cliente exclui o que ele mesmo abriu enquanto a equipe não fez nada nele:
+// nenhuma mensagem e nenhum evento de admin (status, criticidade, solução, N1).
+const clientMayDelete = (
+  incident: {
+    createdById: number | null;
+    events: { actor: { role: UserRole } | null }[];
+    comments: { author: { role: UserRole } }[];
+  },
+  user: JwtPayload,
+) =>
+  incident.createdById === user.sub &&
+  !incident.events.some((event) => event.actor?.role === UserRole.ADMIN) &&
+  !incident.comments.some((comment) => comment.author.role === UserRole.ADMIN);
 
 @Injectable()
 export class IncidentsService {
@@ -185,7 +210,17 @@ export class IncidentsService {
   }
 
   async getIncidents(query: ListIncidentsQueryDto, user: JwtPayload) {
+    if (query.deleted && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Apenas administradores veem os chamados excluídos',
+      );
+    }
+
     const where: Prisma.IncidentWhereInput = {
+      deletedAt: query.deleted ? { not: null } : null,
+      ...(query.n1 !== undefined
+        ? { n1ClassifiedAt: query.n1 ? { not: null } : null }
+        : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.source ? { source: query.source } : {}),
       ...(query.environment ? { environment: query.environment } : {}),
@@ -236,6 +271,7 @@ export class IncidentsService {
           include: {
             company: { select: PUBLIC_COMPANY_SELECT },
             createdBy: { select: PUBLIC_USER_SELECT },
+            deletedBy: { select: PUBLIC_USER_SELECT },
           },
           // O id desempata createdAt iguais para uma página não repetir nem pular linhas.
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -259,14 +295,19 @@ export class IncidentsService {
           _count: { _all: true },
         }),
         // O SLA depende do expediente, que o banco não sabe contar: os que
-        // esperam resposta vêm para cá. São só a fila sem resposta, não o histórico.
+        // esperam resposta vêm para cá. São só a fila sem resposta, não o
+        // histórico: sem a primeira resposta ou sem a resposta à reabertura.
         this.prisma.incident.findMany({
           where: {
             AND: [
               where,
               {
-                firstRespondedAt: null,
                 status: { not: IncidentStatus.RESOLVED },
+                n1ClassifiedAt: null,
+                OR: [
+                  { reopenedAt: null, firstRespondedAt: null },
+                  { reopenedAt: { not: null }, reopenRespondedAt: null },
+                ],
               },
             ],
           },
@@ -276,7 +317,7 @@ export class IncidentsService {
 
     const now = new Date();
     const awaitingStates = awaitingResponse.map(
-      (incident) => firstResponseSla(incident, now).state,
+      (incident) => responseSla(incident, now)?.state,
     );
 
     return {
@@ -390,23 +431,25 @@ export class IncidentsService {
 
     return {
       message: 'Ticket criado com sucesso',
-      data: await this.presentIncidentDetail(incident),
+      data: await this.presentIncidentDetail(incident, user),
     };
   }
 
+  // O admin abre um chamado excluído (para ver o que vai restaurar); para o
+  // cliente ele não existe mais.
   async getIncident(id: number, user: JwtPayload) {
     const incident = await this.prisma.incident.findUnique({
       where: { id },
       include: INCIDENT_DETAIL_INCLUDE,
     });
 
-    if (!incident) {
+    if (!incident || (incident.deletedAt && user.role !== UserRole.ADMIN)) {
       throw new NotFoundException(`Incidente não encontrado para o ID ${id}`);
     }
 
     this.assertIncidentAccess(incident.companyId, user);
 
-    return this.presentIncidentDetail(incident);
+    return this.presentIncidentDetail(incident, user);
   }
 
   async getMonthlyReport(query: MonthlyReportQueryDto, user: JwtPayload) {
@@ -421,6 +464,7 @@ export class IncidentsService {
           gte: startDate,
           lte: endDate,
         },
+        deletedAt: null,
         ...this.buildScopedCompanyFilter(user, query.companyId),
       },
       include: {
@@ -453,6 +497,7 @@ export class IncidentsService {
       const createdAt = incident.createdAt;
       const latestLog = incident.logs[0];
       const sla = firstResponseSla(incident, now);
+      const n1 = Boolean(incident.n1ClassifiedAt);
 
       return {
         incidentId: incident.id,
@@ -492,7 +537,9 @@ export class IncidentsService {
         errorType: incident.priority,
         source: incident.source,
         slaTarget: sla.target,
-        slaState: sla.state,
+        // N1 fica fora do SLA da equipe: sem resultado de prazo.
+        slaState: n1 ? null : sla.state,
+        n1,
         priority: incident.priority,
         description: incident.description,
         status: incident.status,
@@ -507,6 +554,8 @@ export class IncidentsService {
           gte: startDate,
           lte: endDate,
         },
+        // A ação ligada a um chamado excluído sai junto com ele.
+        OR: [{ incidentId: null }, { incident: { deletedAt: null } }],
       },
       include: {
         incident: true,
@@ -552,6 +601,15 @@ export class IncidentsService {
         {
           label: 'Incidentes atendidos',
           value: String(incidentsWithAttachmentUrls.length),
+          status: 'ATTENDED',
+        },
+        {
+          label: 'Chamados N1 (fora do SLA)',
+          value: String(
+            incidentsWithAttachmentUrls.filter(
+              (incident) => incident.n1ClassifiedAt,
+            ).length,
+          ),
           status: 'ATTENDED',
         },
         {
@@ -601,6 +659,8 @@ export class IncidentsService {
   ) {
     const current = await this.getIncident(id, user);
 
+    this.assertNotDeleted(current);
+
     if (user.role !== UserRole.ADMIN) {
       this.assertClientUpdate(
         current.status,
@@ -624,9 +684,14 @@ export class IncidentsService {
       status: data.status,
       priority: data.priority,
       correctiveActions,
+      n1: data.n1,
       attachments: uploadedCorrectiveAttachments,
       actorId: user.sub,
     });
+    const reopening =
+      current.status === IncidentStatus.RESOLVED &&
+      data.status !== undefined &&
+      data.status !== IncidentStatus.RESOLVED;
 
     const incident = await this.withUploadCleanup(
       uploadedCorrectiveAttachments,
@@ -636,8 +701,14 @@ export class IncidentsService {
           data: {
             ...(data.status ? { status: data.status } : {}),
             ...(data.priority ? { priority: data.priority } : {}),
-            ...(data.status && data.status !== current.status
-              ? this.firstResponseWrite(current, user)
+            ...(reopening
+              ? this.reopeningWrite(current, user)
+              : data.status && data.status !== current.status
+                ? this.responseWrite(current, user)
+                : {}),
+            ...(data.n1 !== undefined &&
+            data.n1 !== Boolean(current.n1ClassifiedAt)
+              ? { n1ClassifiedAt: data.n1 ? new Date() : null }
               : {}),
             ...(correctiveActions !== undefined ? { correctiveActions } : {}),
             ...(uploadedCorrectiveAttachments.length
@@ -654,7 +725,7 @@ export class IncidentsService {
         }),
     );
 
-    return this.presentIncidentDetail(incident);
+    return this.presentIncidentDetail(incident, user);
   }
 
   // Evidência depois de aberto o chamado, por qualquer um que veja o chamado.
@@ -685,7 +756,7 @@ export class IncidentsService {
       }),
     );
 
-    return this.presentIncidentDetail(incident);
+    return this.presentIncidentDetail(incident, user);
   }
 
   // O admin escreve quando quiser; o cliente responde depois que um admin
@@ -713,7 +784,7 @@ export class IncidentsService {
       where: { id },
       data: {
         comments: { create: { authorId: user.sub, message: data.message } },
-        ...this.firstResponseWrite(current, user),
+        ...this.responseWrite(current, user),
         ...(await this.companyNoticesWrite(current.companyId, user, [
           { type: NotificationType.COMMENT_ADDED },
         ])),
@@ -721,7 +792,88 @@ export class IncidentsService {
       include: INCIDENT_DETAIL_INCLUDE,
     });
 
-    return this.presentIncidentDetail(incident);
+    return this.presentIncidentDetail(incident, user);
+  }
+
+  // Exclusão lógica: o chamado sai das listas, do relatório e dos avisos, e o
+  // admin pode restaurar. O admin exclui qualquer um; o cliente, só o que ele
+  // mesmo abriu e em que a equipe ainda não fez nada.
+  async deleteIncident(id: number, data: DeleteIncidentDto, user: JwtPayload) {
+    const incident = await this.prisma.incident.findUnique({
+      where: { id },
+      select: {
+        companyId: true,
+        createdById: true,
+        deletedAt: true,
+        events: { select: { actor: { select: { role: true } } } },
+        comments: { select: { author: { select: { role: true } } } },
+      },
+    });
+
+    if (!incident) {
+      throw new NotFoundException(`Incidente não encontrado para o ID ${id}`);
+    }
+
+    this.assertIncidentAccess(incident.companyId, user);
+    this.assertNotDeleted(incident, user);
+
+    if (user.role !== UserRole.ADMIN && !clientMayDelete(incident, user)) {
+      throw new ForbiddenException(
+        'Você só pode excluir chamados que você abriu e em que a equipe ainda não respondeu',
+      );
+    }
+
+    const deleted = await this.prisma.incident.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        deletedById: user.sub,
+        deletionReason: data.reason,
+        events: {
+          create: {
+            type: IncidentEventType.INCIDENT_DELETED,
+            actorId: user.sub,
+            metadata: { reason: data.reason },
+          },
+        },
+      },
+      select: { id: true, deletedAt: true },
+    });
+
+    return { message: 'Chamado excluído', data: deleted };
+  }
+
+  async restoreIncident(id: number, user: JwtPayload) {
+    const current = await this.prisma.incident.findUnique({
+      where: { id },
+      select: { deletedAt: true },
+    });
+
+    if (!current) {
+      throw new NotFoundException(`Incidente não encontrado para o ID ${id}`);
+    }
+
+    if (!current.deletedAt) {
+      throw new ConflictException('O chamado não está excluído');
+    }
+
+    const incident = await this.prisma.incident.update({
+      where: { id },
+      data: {
+        deletedAt: null,
+        deletedById: null,
+        deletionReason: null,
+        events: {
+          create: {
+            type: IncidentEventType.INCIDENT_RESTORED,
+            actorId: user.sub,
+          },
+        },
+      },
+      include: INCIDENT_DETAIL_INCLUDE,
+    });
+
+    return this.presentIncidentDetail(incident, user);
   }
 
   async createPreventiveAction(
@@ -729,7 +881,7 @@ export class IncidentsService {
     user: JwtPayload,
   ) {
     if (data.incidentId) {
-      await this.getIncident(data.incidentId, user);
+      this.assertNotDeleted(await this.getIncident(data.incidentId, user));
     }
 
     return this.prisma.preventiveAction.create({
@@ -749,7 +901,7 @@ export class IncidentsService {
     const pageSize = query.pageSize ?? DEFAULT_ERROR_LOGS_PAGE_SIZE;
 
     const incidentList = await this.prisma.incidentLog.findMany({
-      where: { incident: { companyId } },
+      where: { incident: { companyId, deletedAt: null } },
       include: {
         incident: true,
       },
@@ -767,7 +919,7 @@ export class IncidentsService {
 
   async getErrorLog(id: number, companyId: number) {
     const incidentLog = await this.prisma.incidentLog.findFirst({
-      where: { id, incident: { companyId } },
+      where: { id, incident: { companyId, deletedAt: null } },
       include: {
         incident: true,
       },
@@ -886,8 +1038,8 @@ export class IncidentsService {
       select: {
         id: true,
         companyId: true,
-        priority: true,
-        firstRespondedAt: true,
+        deletedAt: true,
+        ...SLA_SELECT,
       },
     });
 
@@ -896,8 +1048,27 @@ export class IncidentsService {
     }
 
     this.assertIncidentAccess(incident.companyId, user);
+    this.assertNotDeleted(incident, user);
 
     return incident;
+  }
+
+  // Excluído não muda: o cliente nem o vê, e o admin restaura antes.
+  private assertNotDeleted(
+    incident: { deletedAt: Date | null },
+    user?: JwtPayload,
+  ) {
+    if (!incident.deletedAt) {
+      return;
+    }
+
+    if (user && user.role !== UserRole.ADMIN) {
+      throw new NotFoundException('Incidente não encontrado');
+    }
+
+    throw new ConflictException(
+      'O chamado está excluído. Restaure-o antes de alterá-lo.',
+    );
   }
 
   // O cliente confirma que o problema acabou (resolver) ou avisa que voltou
@@ -916,6 +1087,12 @@ export class IncidentsService {
     if (data.priority !== undefined) {
       throw new ForbiddenException(
         'Apenas administradores mudam a criticidade do chamado',
+      );
+    }
+
+    if (data.n1 !== undefined) {
+      throw new ForbiddenException(
+        'Apenas administradores classificam o chamado como N1',
       );
     }
 
@@ -951,20 +1128,49 @@ export class IncidentsService {
     }
   }
 
-  // A primeira mensagem ou mudança de status de um admin para o relógio do SLA.
-  // Fica gravada a criticidade de antes desta edição: se o admin muda a
-  // criticidade junto com a resposta, o prazo que vale é o que o cliente via.
-  private firstResponseWrite(
-    incident: Pick<SlaIncident, 'priority' | 'firstRespondedAt'>,
+  // A mensagem ou mudança de status de um admin para o relógio que estiver
+  // correndo: o da reabertura, se houve, ou o da primeira resposta. Resolvido,
+  // o relógio já parou. Fica gravada a criticidade de antes desta edição: se o
+  // admin muda a criticidade junto com a resposta, o prazo que vale é o que o
+  // cliente via.
+  private responseWrite(
+    incident: SlaIncident,
     user: JwtPayload,
-  ): Pick<Prisma.IncidentUpdateInput, 'firstRespondedAt' | 'responsePriority'> {
-    if (user.role !== UserRole.ADMIN || incident.firstRespondedAt) {
+  ): Prisma.IncidentUpdateInput {
+    if (
+      user.role !== UserRole.ADMIN ||
+      incident.status === IncidentStatus.RESOLVED
+    ) {
       return {};
     }
 
+    if (incident.reopenedAt) {
+      return incident.reopenRespondedAt
+        ? {}
+        : {
+            reopenRespondedAt: new Date(),
+            reopenResponsePriority: incident.priority,
+          };
+    }
+
+    return incident.firstRespondedAt
+      ? {}
+      : { firstRespondedAt: new Date(), responsePriority: incident.priority };
+  }
+
+  // Reabrir (de resolvido para outro status) começa um prazo novo. Quando é a
+  // equipe que reabre, ele já nasce respondido, como o chamado que ela abre.
+  private reopeningWrite(
+    incident: SlaIncident,
+    user: JwtPayload,
+  ): Prisma.IncidentUpdateInput {
+    const now = new Date();
+    const byAdmin = user.role === UserRole.ADMIN;
+
     return {
-      firstRespondedAt: new Date(),
-      responsePriority: incident.priority,
+      reopenedAt: now,
+      reopenRespondedAt: byAdmin ? now : null,
+      reopenResponsePriority: byAdmin ? incident.priority : null,
     };
   }
 
@@ -1098,13 +1304,19 @@ export class IncidentsService {
     });
   }
 
-  private async presentIncidentDetail(incident: IncidentDetailRow) {
+  private async presentIncidentDetail(
+    incident: IncidentDetailRow,
+    user: JwtPayload,
+  ) {
     const { events, comments, ...rest } = incident;
 
     return {
       ...(await this.resolveIncidentAttachmentUrls(withSla(rest))),
       events: events.map(toPublicIncidentEvent),
       comments: comments.map(toPublicIncidentComment),
+      canDelete:
+        !incident.deletedAt &&
+        (user.role === UserRole.ADMIN || clientMayDelete(incident, user)),
     };
   }
 

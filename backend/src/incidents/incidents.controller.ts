@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   ParseIntPipe,
@@ -23,6 +25,7 @@ import { CreateIncidentDto } from './dto/create-incident.dto';
 import { UpdateIncidentDto } from './dto/update-incident.dto';
 import { CreatePreventiveActionDto } from './dto/create-preventive-action.dto';
 import { CreateIncidentCommentDto } from './dto/create-incident-comment.dto';
+import { DeleteIncidentDto } from './dto/delete-incident.dto';
 import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -151,6 +154,30 @@ export class IncidentsController {
     @Req() request: AuthenticatedRequest,
   ) {
     return this.incidentsService.addComment(id, body, request.user);
+  }
+
+  // Exclusão lógica. Aberto ao cliente só para o que ele abriu e a equipe não
+  // tocou: o service confere.
+  @Post(':id/delete')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  deleteIncident(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: DeleteIncidentDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.deleteIncident(id, body, request.user);
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  restoreIncident(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.incidentsService.restoreIncident(id, request.user);
   }
 
   @Post('preventive-actions')

@@ -1,5 +1,12 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 import { IncidentLevel, IncidentStatus } from '@prisma/client';
+import { ToBoolean } from '../../common/to-boolean';
 import { MAX_LONG_TEXT_LENGTH } from '../limits';
 
 export class UpdateIncidentDto {
@@ -16,4 +23,10 @@ export class UpdateIncidentDto {
   @IsString()
   @MaxLength(MAX_LONG_TEXT_LENGTH)
   correctiveActions?: string;
+
+  /** Só o admin classifica; o service recusa a do cliente. */
+  @IsOptional()
+  @ToBoolean()
+  @IsBoolean()
+  n1?: boolean;
 }

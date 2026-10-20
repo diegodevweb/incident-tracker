@@ -1,9 +1,12 @@
 import { IncidentLevel, IncidentStatus } from '@prisma/client';
 
 /*
- * SLA de primeira resposta, contado em horas úteis: seg. a sex., das 9h às 18h
- * no horário de Brasília, sem os feriados nacionais. O relógio para na
- * primeira mensagem ou mudança de status de um admin (firstRespondedAt).
+ * SLA de resposta, contado em horas úteis: seg. a sex., das 9h às 18h no
+ * horário de Brasília, sem os feriados nacionais. O relógio começa na abertura
+ * e para na primeira mensagem ou mudança de status de um admin
+ * (firstRespondedAt). Cada reabertura começa um prazo novo, com a mesma meta,
+ * que para na resposta seguinte da equipe (reopenRespondedAt). Chamado N1 não
+ * tem prazo: o atendimento é do suporte N1 do cliente.
  */
 
 const BUSINESS_START_HOUR = 9;
@@ -19,6 +22,7 @@ const DAY_MS = 24 * HOUR_MS;
 export const BUSINESS_DAY_MINUTES =
   (BUSINESS_END_HOUR - BUSINESS_START_HOUR) * 60;
 
+// As metas da primeira resposta valem também para a resposta à reabertura.
 export const FIRST_RESPONSE_TARGET_MINUTES: Record<IncidentLevel, number> = {
   CRITICAL: 2 * 60,
   ERROR: 4 * 60,
@@ -156,11 +160,11 @@ export function businessMinutesBetween(from: Date, to: Date) {
   return Math.floor(total / MINUTE_MS);
 }
 
-export function firstResponseDueAt(createdAt: Date, priority: IncidentLevel) {
-  return addBusinessMinutes(createdAt, FIRST_RESPONSE_TARGET_MINUTES[priority]);
+export function responseDueAt(startedAt: Date, priority: IncidentLevel) {
+  return addBusinessMinutes(startedAt, FIRST_RESPONSE_TARGET_MINUTES[priority]);
 }
 
-export type FirstResponseSlaState =
+export type ResponseSlaState =
   /** Sem resposta, dentro do prazo. */
   | 'ON_TIME'
   /** Sem resposta, com menos de um quarto do prazo sobrando. */
@@ -172,9 +176,18 @@ export type FirstResponseSlaState =
   /** Resolvido (pelo cliente) antes de a equipe responder: o relógio parou. */
   | 'CLOSED';
 
-export type FirstResponseSla = {
-  state: FirstResponseSlaState;
-  /** A criticidade que define o prazo: a da primeira resposta, ou a atual. */
+export type ResponseCycle =
+  /** Da abertura à primeira resposta. */
+  | 'OPENING'
+  /** Da última reabertura à resposta da equipe depois dela. */
+  | 'REOPENING';
+
+export type ResponseSla = {
+  cycle: ResponseCycle;
+  /** Onde o relógio começou: a abertura ou a reabertura. */
+  startedAt: Date;
+  state: ResponseSlaState;
+  /** A criticidade que define o prazo: a da resposta, ou a atual. */
   priority: IncidentLevel;
   target: string;
   dueAt: Date;
@@ -183,7 +196,7 @@ export type FirstResponseSla = {
   remainingMinutes: number | null;
   /** Minutos úteis além do prazo: até agora (BREACHED) ou até a resposta (MISSED). */
   overdueMinutes: number | null;
-  /** Minutos úteis da abertura à primeira resposta. */
+  /** Minutos úteis do começo do relógio à resposta. */
   responseMinutes: number | null;
 };
 
@@ -193,22 +206,36 @@ export type SlaIncident = {
   status: IncidentStatus;
   firstRespondedAt: Date | null;
   responsePriority: IncidentLevel | null;
+  reopenedAt: Date | null;
+  reopenRespondedAt: Date | null;
+  reopenResponsePriority: IncidentLevel | null;
+  n1ClassifiedAt: Date | null;
+};
+
+type Cycle = {
+  cycle: ResponseCycle;
+  startedAt: Date;
+  respondedAt: Date | null;
+  responsePriority: IncidentLevel | null;
+  /** O relógio parou sem resposta. */
+  closed: boolean;
 };
 
 /**
- * O SLA de primeira resposta do chamado agora. Respondido, vale a criticidade
- * gravada na resposta; sem resposta (ou nos chamados respondidos antes de o
- * SLA existir), vale a criticidade atual.
+ * Respondido, vale a criticidade gravada na resposta; sem resposta (ou nas
+ * respostas gravadas antes de o SLA existir), vale a criticidade atual.
  */
-export function firstResponseSla(
-  incident: SlaIncident,
-  now = new Date(),
-): FirstResponseSla {
-  const respondedAt = incident.firstRespondedAt;
-  const priority =
-    (respondedAt && incident.responsePriority) || incident.priority;
-  const dueAt = firstResponseDueAt(incident.createdAt, priority);
+function cycleSla(
+  cycle: Cycle,
+  currentPriority: IncidentLevel,
+  now: Date,
+): ResponseSla {
+  const { respondedAt } = cycle;
+  const priority = (respondedAt && cycle.responsePriority) || currentPriority;
+  const dueAt = responseDueAt(cycle.startedAt, priority);
   const base = {
+    cycle: cycle.cycle,
+    startedAt: cycle.startedAt,
     priority,
     target: FIRST_RESPONSE_TARGET_LABEL[priority],
     dueAt,
@@ -227,11 +254,11 @@ export function firstResponseSla(
       overdueMinutes: missed
         ? businessMinutesBetween(dueAt, respondedAt)
         : null,
-      responseMinutes: businessMinutesBetween(incident.createdAt, respondedAt),
+      responseMinutes: businessMinutesBetween(cycle.startedAt, respondedAt),
     };
   }
 
-  if (incident.status === IncidentStatus.RESOLVED) {
+  if (cycle.closed) {
     return { ...base, state: 'CLOSED' };
   }
 
@@ -253,4 +280,57 @@ export function firstResponseSla(
         : 'ON_TIME',
     remainingMinutes,
   };
+}
+
+/**
+ * O SLA de primeira resposta, o do relatório. Se o cliente resolveu antes da
+ * resposta, ele fica encerrado mesmo que o chamado seja reaberto depois: o
+ * prazo da reabertura é outro (responseSla).
+ */
+export function firstResponseSla(
+  incident: SlaIncident,
+  now = new Date(),
+): ResponseSla {
+  return cycleSla(
+    {
+      cycle: 'OPENING',
+      startedAt: incident.createdAt,
+      respondedAt: incident.firstRespondedAt,
+      responsePriority: incident.responsePriority,
+      closed:
+        incident.status === IncidentStatus.RESOLVED ||
+        Boolean(incident.reopenedAt),
+    },
+    incident.priority,
+    now,
+  );
+}
+
+/**
+ * O prazo que vale para o chamado agora: o da última reabertura, se houve, ou
+ * o da primeira resposta. Nulo quando o chamado é N1 e não tem prazo da equipe.
+ */
+export function responseSla(
+  incident: SlaIncident,
+  now = new Date(),
+): ResponseSla | null {
+  if (incident.n1ClassifiedAt) {
+    return null;
+  }
+
+  if (!incident.reopenedAt) {
+    return firstResponseSla(incident, now);
+  }
+
+  return cycleSla(
+    {
+      cycle: 'REOPENING',
+      startedAt: incident.reopenedAt,
+      respondedAt: incident.reopenRespondedAt,
+      responsePriority: incident.reopenResponsePriority,
+      closed: incident.status === IncidentStatus.RESOLVED,
+    },
+    incident.priority,
+    now,
+  );
 }

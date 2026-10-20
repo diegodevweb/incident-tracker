@@ -9,11 +9,11 @@ import {
 /**
  * Como os eventos são carregados no detalhe do chamado. Do autor sai só o
  * nome: o cliente também vê a linha do tempo, e o e-mail de quem atendeu não
- * precisa ir junto.
+ * precisa ir junto. O papel fica no servidor (diz se a equipe já agiu).
  */
 export const INCIDENT_EVENTS_QUERY = {
   orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-  include: { actor: { select: { name: true } } },
+  include: { actor: { select: { name: true, role: true } } },
 } satisfies Prisma.Incident$eventsArgs;
 
 type IncidentEventRow = Prisma.IncidentEventGetPayload<{
@@ -62,10 +62,12 @@ export function incidentUpdateEvents(input: {
     status: IncidentStatus;
     priority: IncidentLevel;
     correctiveActions: string | null;
+    n1ClassifiedAt?: Date | null;
   };
   status?: IncidentStatus;
   priority?: IncidentLevel;
   correctiveActions?: string | null;
+  n1?: boolean;
   attachments: AddedAttachment[];
   actorId: number;
 }): NewIncidentEvent[] {
@@ -89,6 +91,15 @@ export function incidentUpdateEvents(input: {
       type: IncidentEventType.PRIORITY_CHANGED,
       actorId,
       metadata: { fromPriority: current.priority, toPriority: input.priority },
+    });
+  }
+
+  if (input.n1 !== undefined && input.n1 !== Boolean(current.n1ClassifiedAt)) {
+    events.push({
+      type: input.n1
+        ? IncidentEventType.N1_CLASSIFIED
+        : IncidentEventType.N1_REMOVED,
+      actorId,
     });
   }
 

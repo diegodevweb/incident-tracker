@@ -34,6 +34,12 @@ export function noticesForIncidentUpdate(
           metadata: event.metadata,
         });
         break;
+      case IncidentEventType.N1_CLASSIFIED:
+        notices.push({ type: NotificationType.N1_CLASSIFIED });
+        break;
+      case IncidentEventType.N1_REMOVED:
+        notices.push({ type: NotificationType.N1_REMOVED });
+        break;
       case IncidentEventType.CORRECTIVE_ACTION_ADDED:
       case IncidentEventType.ATTACHMENT_ADDED:
         solutionUpdated = true;

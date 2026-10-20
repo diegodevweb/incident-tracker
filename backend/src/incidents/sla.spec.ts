@@ -2,8 +2,9 @@ import { IncidentLevel, IncidentStatus } from '@prisma/client';
 import {
   addBusinessMinutes,
   businessMinutesBetween,
-  firstResponseDueAt,
   firstResponseSla,
+  responseDueAt,
+  responseSla,
   type SlaIncident,
 } from './sla';
 
@@ -81,14 +82,14 @@ describe('first response SLA', () => {
     });
   });
 
-  describe('firstResponseDueAt', () => {
+  describe('responseDueAt', () => {
     it.each([
       [IncidentLevel.CRITICAL, '2026-10-15T12:00'],
       [IncidentLevel.ERROR, '2026-10-15T14:00'],
       [IncidentLevel.WARNING, '2026-10-16T10:00'],
       [IncidentLevel.INFO, '2026-10-19T10:00'],
     ])('gives %s its target', (priority, due) => {
-      expect(firstResponseDueAt(brt('2026-10-15T10:00'), priority)).toEqual(
+      expect(responseDueAt(brt('2026-10-15T10:00'), priority)).toEqual(
         brt(due),
       );
     });
@@ -102,11 +103,17 @@ describe('first response SLA', () => {
       status: IncidentStatus.OPEN,
       firstRespondedAt: null,
       responsePriority: null,
+      reopenedAt: null,
+      reopenRespondedAt: null,
+      reopenResponsePriority: null,
+      n1ClassifiedAt: null,
       ...overrides,
     });
 
     it('is on time while most of the target is left', () => {
       expect(firstResponseSla(incident(), brt('2026-10-15T11:00'))).toEqual({
+        cycle: 'OPENING',
+        startedAt: brt('2026-10-15T10:00'),
         state: 'ON_TIME',
         priority: IncidentLevel.CRITICAL,
         target: 'até 2h úteis',
@@ -217,6 +224,103 @@ describe('first response SLA', () => {
         remainingMinutes: null,
         overdueMinutes: null,
       });
+    });
+
+    it('stays closed when the client reopens without an answer', () => {
+      expect(
+        firstResponseSla(
+          incident({ reopenedAt: brt('2026-10-19T09:30') }),
+          brt('2026-10-20T10:00'),
+        ),
+      ).toMatchObject({ state: 'CLOSED' });
+    });
+  });
+
+  describe('responseSla', () => {
+    // Crítico aberto às 10h de quinta, respondido às 10h45, resolvido e
+    // reaberto às 17h30: o prazo novo de 2h úteis vence às 10h30 de sexta.
+    const reopened = (overrides: Partial<SlaIncident> = {}): SlaIncident => ({
+      createdAt: brt('2026-10-15T10:00'),
+      priority: IncidentLevel.CRITICAL,
+      status: IncidentStatus.OPEN,
+      firstRespondedAt: brt('2026-10-15T10:45'),
+      responsePriority: IncidentLevel.CRITICAL,
+      reopenedAt: brt('2026-10-15T17:30'),
+      reopenRespondedAt: null,
+      reopenResponsePriority: null,
+      n1ClassifiedAt: null,
+      ...overrides,
+    });
+
+    it('is the first response while the incident was never reopened', () => {
+      const incident = reopened({ reopenedAt: null });
+
+      expect(responseSla(incident, brt('2026-10-16T10:00'))).toEqual(
+        firstResponseSla(incident, brt('2026-10-16T10:00')),
+      );
+    });
+
+    it('counts a new deadline from the reopening', () => {
+      expect(responseSla(reopened(), brt('2026-10-15T17:45'))).toMatchObject({
+        cycle: 'REOPENING',
+        startedAt: brt('2026-10-15T17:30'),
+        state: 'ON_TIME',
+        dueAt: brt('2026-10-16T10:30'),
+        remainingMinutes: 105,
+      });
+    });
+
+    it('is breached when the reopening goes unanswered past the deadline', () => {
+      expect(responseSla(reopened(), brt('2026-10-16T11:00'))).toMatchObject({
+        state: 'BREACHED',
+        overdueMinutes: 30,
+      });
+    });
+
+    it('takes the priority recorded in the answer to the reopening', () => {
+      // Respondido às 12h de sexta como Alta (4h): no prazo, que vencia às 12h30.
+      expect(
+        responseSla(
+          reopened({
+            reopenRespondedAt: brt('2026-10-16T12:00'),
+            reopenResponsePriority: IncidentLevel.ERROR,
+          }),
+        ),
+      ).toMatchObject({
+        state: 'MET',
+        priority: IncidentLevel.ERROR,
+        dueAt: brt('2026-10-16T12:30'),
+        responseMinutes: 210,
+      });
+    });
+
+    it('stops the clock when the incident is resolved again before an answer', () => {
+      expect(
+        responseSla(
+          reopened({ status: IncidentStatus.RESOLVED }),
+          brt('2026-10-20T10:00'),
+        ),
+      ).toMatchObject({ state: 'CLOSED' });
+    });
+
+    it('does not change the result of the first response', () => {
+      expect(
+        firstResponseSla(reopened(), brt('2026-10-20T10:00')),
+      ).toMatchObject({ cycle: 'OPENING', state: 'MET' });
+    });
+
+    it('is null for an N1 incident, which has no deadline of the team', () => {
+      expect(
+        responseSla(reopened({ n1ClassifiedAt: brt('2026-10-15T18:00') })),
+      ).toBeNull();
+      expect(
+        responseSla(
+          reopened({
+            reopenedAt: null,
+            n1ClassifiedAt: brt('2026-10-15T18:00'),
+          }),
+        ),
+      ).toBeNull();
     });
   });
 });

@@ -62,6 +62,7 @@ type IncidentSummary = {
 };
 
 type IncidentSla = {
+  cycle: string;
   state: string;
   priority: string;
   target: string;
@@ -70,15 +71,32 @@ type IncidentSla = {
 
 type IncidentDetail = IncidentSummary & {
   status: string;
-  sla: IncidentSla;
+  /** Nulo nos chamados N1, que não têm prazo da equipe. */
+  sla: IncidentSla | null;
+  n1ClassifiedAt: string | null;
+  deletionReason: string | null;
+  deletedBy: { id: number; name: string } | null;
+  canDelete: boolean;
   attachments: { url: string; filename: string; category: string }[];
   events: { type: string; actorName: string | null }[];
   comments: { message: string; authorName: string; authorRole: string }[];
 };
 
 type Page = {
-  items: (IncidentSummary & { sla: IncidentSla })[];
+  items: (IncidentSummary & { sla: IncidentSla | null })[];
   total: number;
+};
+
+type NotificationList = {
+  unreadCount: number;
+  items: {
+    type: string;
+    incident: { id: number; title: string; source: string };
+  }[];
+};
+
+type MonthlyReport = {
+  entries: { incidentId: number; slaState: string | null; n1: boolean }[];
 };
 
 type Account = {
@@ -125,8 +143,53 @@ describe('API (e2e)', () => {
       await http().get(`/incidents/${id}`).set(bearer(token)).expect(200),
     );
 
-  const listIncidents = async (token: string) =>
-    bodyOf<Page>(await http().get('/incidents').set(bearer(token)).expect(200));
+  const listIncidents = async (
+    token: string,
+    query: Record<string, string> = {},
+  ) =>
+    bodyOf<Page>(
+      await http()
+        .get('/incidents')
+        .query(query)
+        .set(bearer(token))
+        .expect(200),
+    );
+
+  const notificationsOf = async (token: string) =>
+    bodyOf<NotificationList>(
+      await http().get('/notifications').set(bearer(token)).expect(200),
+    );
+
+  /** O cliente abre com criticidade e um print, como o painel exige. */
+  const openIncident = async (token: string, title: string) =>
+    bodyOf<{ data: IncidentDetail }>(
+      await http()
+        .post('/incidents')
+        .set(bearer(token))
+        .field('title', title)
+        .field('description', `${title}: detalhes`)
+        .field('environment', 'production')
+        .field('priority', 'CRITICAL')
+        .attach('attachments', png, {
+          filename: 'print.png',
+          contentType: 'image/png',
+        })
+        .expect(201),
+    ).data;
+
+  const reportEntry = async (incidentId: number) => {
+    const report = bodyOf<MonthlyReport>(
+      await http()
+        .get('/incidents/reports/monthly')
+        .query({
+          startDate: new Date(Date.now() - 60 * 60_000).toISOString(),
+          endDate: new Date(Date.now() + 60_000).toISOString(),
+        })
+        .set(bearer(admin.token))
+        .expect(200),
+    );
+    return report.entries.find((entry) => entry.incidentId === incidentId);
+  };
 
   const createCompany = async (body: Record<string, unknown>) =>
     bodyOf<Company>(
@@ -442,18 +505,6 @@ describe('API (e2e)', () => {
   });
 
   it('tells the users of the company what the admin did, each one marking their own as read', async () => {
-    type NotificationList = {
-      unreadCount: number;
-      items: {
-        type: string;
-        incident: { id: number; title: string; source: string };
-      }[];
-    };
-    const notificationsOf = async (token: string) =>
-      bodyOf<NotificationList>(
-        await http().get('/notifications').set(bearer(token)).expect(200),
-      );
-
     await http()
       .patch(`/incidents/${incidentId}`)
       .set(bearer(ana.token))
@@ -545,7 +596,7 @@ describe('API (e2e)', () => {
       priority: 'ERROR',
       target: 'até 4h úteis',
     });
-    expect(answered.sla.respondedAt).not.toBeNull();
+    expect(answered.sla?.respondedAt).not.toBeNull();
 
     // Depois da resposta, nada muda o resultado.
     await http()
@@ -556,6 +607,151 @@ describe('API (e2e)', () => {
     expect((await getIncident(created.id, carla.token)).sla).toEqual(
       answered.sla,
     );
+  });
+
+  it('gives a reopened incident a new response deadline, keeping the first answer', async () => {
+    const { id } = await openIncident(carla.token, 'Rejeição 539');
+    const reply = (message: string) =>
+      http()
+        .post(`/incidents/${id}/comments`)
+        .set(bearer(admin.token))
+        .send({ message })
+        .expect(201);
+    const setStatus = (status: string) =>
+      http()
+        .patch(`/incidents/${id}`)
+        .set(bearer(carla.token))
+        .send({ status })
+        .expect(200);
+
+    await reply('Estamos verificando');
+    await setStatus('RESOLVED');
+    await setStatus('OPEN');
+
+    // O prazo novo começa na reabertura, inteiro e sem resposta.
+    expect((await getIncident(id, carla.token)).sla).toMatchObject({
+      cycle: 'REOPENING',
+      state: 'ON_TIME',
+      target: 'até 2h úteis',
+      respondedAt: null,
+    });
+
+    await reply('Voltamos a olhar');
+    const answered = await getIncident(id, carla.token);
+    expect(answered.sla).toMatchObject({ cycle: 'REOPENING', state: 'MET' });
+    expect(answered.sla?.respondedAt).not.toBeNull();
+
+    // O relatório segue medindo a primeira resposta.
+    expect(await reportEntry(id)).toMatchObject({ slaState: 'MET', n1: false });
+  });
+
+  it('takes an N1 incident out of the team SLA and tells the company', async () => {
+    const { id } = await openIncident(carla.token, 'Dúvida de cadastro');
+    const classify = (token: string, n1: boolean) =>
+      http().patch(`/incidents/${id}`).set(bearer(token)).send({ n1 });
+
+    await classify(carla.token, true).expect(403);
+    await classify(admin.token, true).expect(200);
+
+    const classified = await getIncident(id, carla.token);
+    expect(classified.sla).toBeNull();
+    expect(classified.n1ClassifiedAt).not.toBeNull();
+    expect((await notificationsOf(carla.token)).items[0]).toMatchObject({
+      type: 'N1_CLASSIFIED',
+      incident: { id },
+    });
+
+    const n1Ids = (await listIncidents(admin.token, { n1: 'true' })).items.map(
+      (item) => item.id,
+    );
+    const teamIds = (
+      await listIncidents(admin.token, { n1: 'false' })
+    ).items.map((item) => item.id);
+    expect(n1Ids).toContain(id);
+    expect(teamIds).not.toContain(id);
+    expect(await reportEntry(id)).toMatchObject({ slaState: null, n1: true });
+
+    // Desfeita a classificação, o prazo da equipe volta.
+    await classify(admin.token, false).expect(200);
+    expect((await getIncident(id, carla.token)).sla).toMatchObject({
+      cycle: 'OPENING',
+    });
+    expect((await notificationsOf(carla.token)).items[0].type).toBe(
+      'N1_REMOVED',
+    );
+  });
+
+  it('deletes incidents softly, keeping them in the trash until restored', async () => {
+    const { id, canDelete } = await openIncident(
+      ana.token,
+      'Aberto por engano',
+    );
+    const remove = (token: string, reason?: string) =>
+      http()
+        .post(`/incidents/${id}/delete`)
+        .set(bearer(token))
+        .send(reason === undefined ? {} : { reason });
+    const idsOf = async (token: string, query: Record<string, string> = {}) =>
+      (await listIncidents(token, query)).items.map((item) => item.id);
+
+    expect(canDelete).toBe(true);
+    // O colega da mesma empresa não exclui o que não abriu.
+    await remove(bruno.token, 'Duplicado').expect(403);
+    await remove(ana.token).expect(400);
+    await remove(ana.token, 'Aberto em duplicidade').expect(200);
+
+    await http().get(`/incidents/${id}`).set(bearer(ana.token)).expect(404);
+    await http().get(`/incidents/${id}`).set(bearer(bruno.token)).expect(404);
+    expect(await idsOf(bruno.token)).not.toContain(id);
+    expect(await idsOf(admin.token)).not.toContain(id);
+    expect(await idsOf(admin.token, { deleted: 'true' })).toContain(id);
+    await http()
+      .get('/incidents')
+      .query({ deleted: 'true' })
+      .set(bearer(ana.token))
+      .expect(403);
+
+    // Na lixeira, o admin vê quem excluiu e por quê, e nada muda até restaurar.
+    expect(await getIncident(id, admin.token)).toMatchObject({
+      deletionReason: 'Aberto em duplicidade',
+      deletedBy: { name: ana.name },
+      canDelete: false,
+    });
+    await http()
+      .patch(`/incidents/${id}`)
+      .set(bearer(admin.token))
+      .send({ status: 'IN_PROGRESS' })
+      .expect(409);
+    await http()
+      .post(`/incidents/${id}/restore`)
+      .set(bearer(ana.token))
+      .expect(403);
+    await http()
+      .post(`/incidents/${id}/restore`)
+      .set(bearer(admin.token))
+      .expect(200);
+
+    const restored = await getIncident(id, ana.token);
+    expect(restored.deletionReason).toBeNull();
+    expect(restored.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['INCIDENT_DELETED', 'INCIDENT_RESTORED']),
+    );
+
+    // Depois que a equipe agiu, só o admin exclui; os avisos somem junto.
+    await http()
+      .post(`/incidents/${id}/comments`)
+      .set(bearer(admin.token))
+      .send({ message: 'Pode deixar que encerramos' })
+      .expect(201);
+    expect((await getIncident(id, ana.token)).canDelete).toBe(false);
+    await remove(ana.token, 'Não preciso mais').expect(403);
+    const before = await notificationsOf(bruno.token);
+    expect(before.items[0].incident.id).toBe(id);
+
+    await remove(admin.token, 'Duplicado do chamado anterior').expect(200);
+    const after = await notificationsOf(bruno.token);
+    expect(after.items.map((item) => item.incident.id)).not.toContain(id);
+    expect(after.unreadCount).toBe(before.unreadCount - 1);
   });
 
   it("opens incidents from the webhook for the key's company", async () => {

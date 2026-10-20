@@ -262,7 +262,7 @@ describe('IncidentsService access rules', () => {
     it("scopes a CLIENT's list to the user's company, whoever opened it and from any source", async () => {
       await service.getIncidents({ companyId: 99 }, client);
 
-      expect(listedWhere()).toEqual({ companyId: 7 });
+      expect(listedWhere()).toEqual({ companyId: 7, deletedAt: null });
     });
 
     it('never turns a CLIENT token without a company into an empty filter', async () => {
@@ -278,13 +278,14 @@ describe('IncidentsService access rules', () => {
       expect(listedWhere()).toEqual({
         companyId: 99,
         company: { name: { contains: 'Alfa' } },
+        deletedAt: null,
       });
     });
 
     it('lists every company for an ADMIN without a filter', async () => {
       await service.getIncidents({}, admin);
 
-      expect(listedWhere()).toEqual({});
+      expect(listedWhere()).toEqual({ deletedAt: null });
     });
   });
 });
