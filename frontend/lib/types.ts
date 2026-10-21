@@ -3,7 +3,13 @@ export type IncidentStatus = "OPEN" | "PENDING" | "IN_PROGRESS" | "RESOLVED";
 export type IncidentSource = "WEBHOOK" | "DASHBOARD";
 export type UserRole = "ADMIN" | "CLIENT";
 export type IncidentEnvironment = "production" | "staging" | "local";
-export type IncidentFilter = "ALL" | "WEBHOOK" | "DASHBOARD" | "PRODUCTION";
+export type IncidentFilter =
+  | "ALL"
+  | "WEBHOOK"
+  | "DASHBOARD"
+  | "PRODUCTION"
+  | "N1"
+  | "DELETED";
 export type ReportExecutionStatus =
   | "PENDING"
   | "IN_PROGRESS"
@@ -34,7 +40,11 @@ export type IncidentEventType =
   | "ATTACHMENT_ADDED"
   | "LOG_REGISTERED"
   | "INCIDENT_RESOLVED"
-  | "PRIORITY_CHANGED";
+  | "PRIORITY_CHANGED"
+  | "N1_CLASSIFIED"
+  | "N1_REMOVED"
+  | "INCIDENT_DELETED"
+  | "INCIDENT_RESTORED";
 
 export type IncidentEvent = {
   id: number;
@@ -53,7 +63,7 @@ export type IncidentComment = {
   authorRole: UserRole;
 };
 
-export type FirstResponseSlaState =
+export type ResponseSlaState =
   | "ON_TIME"
   | "AT_RISK"
   | "BREACHED"
@@ -62,12 +72,15 @@ export type FirstResponseSlaState =
   | "CLOSED";
 
 /**
- * SLA de primeira resposta, calculado pela API na hora da leitura. Os minutos
- * são de expediente (seg. a sex., 8h às 18h de Brasília, sem feriados).
+ * SLA de resposta, calculado pela API na hora da leitura. Os minutos são de
+ * expediente (seg. a sex., 9h às 18h de Brasília, sem feriados). O relógio
+ * começa na abertura (OPENING) ou, depois de uma reabertura, nela (REOPENING).
  */
-export type FirstResponseSla = {
-  state: FirstResponseSlaState;
-  /** A criticidade que define o prazo: a da primeira resposta, ou a atual. */
+export type ResponseSla = {
+  cycle: "OPENING" | "REOPENING";
+  startedAt: string;
+  state: ResponseSlaState;
+  /** A criticidade que define o prazo: a da resposta, ou a atual. */
   priority: IncidentLevel;
   target: string;
   dueAt: string;
@@ -76,7 +89,7 @@ export type FirstResponseSla = {
   remainingMinutes: number | null;
   /** Além do prazo: até agora (BREACHED) ou até a resposta (MISSED). */
   overdueMinutes: number | null;
-  /** Da abertura à primeira resposta. */
+  /** Do começo do relógio à resposta. */
   responseMinutes: number | null;
 };
 
@@ -97,14 +110,24 @@ export type Incident = {
   attachments: IncidentAttachment[];
   events?: IncidentEvent[];
   comments: IncidentComment[];
-  sla: FirstResponseSla;
+  /** Nulo nos chamados N1: o atendimento é do suporte N1 do cliente. */
+  sla: ResponseSla | null;
+  n1ClassifiedAt: string | null;
+  /** Exclusão lógica: só o admin vê um chamado excluído (na lixeira). */
+  deletedAt: string | null;
+  deletedByName: string | null;
+  deletionReason: string | null;
+  /** Se quem está logado pode excluir o chamado; só vem no detalhe. */
+  canDelete: boolean;
 };
 
 export type NotificationType =
   | "STATUS_CHANGED"
   | "PRIORITY_CHANGED"
   | "COMMENT_ADDED"
-  | "CORRECTIVE_ACTION_UPDATED";
+  | "CORRECTIVE_ACTION_UPDATED"
+  | "N1_CLASSIFIED"
+  | "N1_REMOVED";
 
 /** Aviso ao cliente sobre o que a equipe fez num chamado da empresa dele. */
 export type AppNotification = {
@@ -214,7 +237,9 @@ export type MonthlyReportEntry = {
   errorType: IncidentLevel;
   source: IncidentSource;
   slaTarget: string;
-  slaState: FirstResponseSlaState;
+  /** Primeira resposta; nulo nos chamados N1, que ficam fora do SLA. */
+  slaState: ResponseSlaState | null;
+  n1: boolean;
   priority: IncidentLevel;
   description: string;
   status?: IncidentStatus;

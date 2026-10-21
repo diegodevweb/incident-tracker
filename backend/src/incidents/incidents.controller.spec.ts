@@ -33,6 +33,8 @@ describe('IncidentsController authorization', () => {
     getErrorLog: jest.fn().mockResolvedValue({ id: 1 }),
     createErrorLog: jest.fn().mockResolvedValue({ message: 'ok' }),
     createPreventiveAction: jest.fn().mockResolvedValue({ id: 1 }),
+    deleteIncident: jest.fn().mockResolvedValue({ message: 'ok' }),
+    restoreIncident: jest.fn().mockResolvedValue({ id: 1 }),
   };
 
   // Gerada em tempo de execução: nada parecido com credencial fica no código.
@@ -227,6 +229,12 @@ describe('IncidentsController authorization', () => {
           ),
         handler: () => incidentsService.createPreventiveAction,
       },
+      {
+        name: 'POST /incidents/:id/restore',
+        send: (token?: string) =>
+          withToken(http().post('/incidents/1/restore'), token),
+        handler: () => incidentsService.restoreIncident,
+      },
     ];
 
     function withToken(req: request.Test, token?: string) {
@@ -356,7 +364,83 @@ describe('IncidentsController authorization', () => {
       );
     });
 
+    // Se o cliente pode excluir aquele chamado é regra do service.
+    it('lets a CLIENT ask to delete an incident, with the reason trimmed', async () => {
+      await http()
+        .post('/incidents/1/delete')
+        .set('Authorization', `Bearer ${clientToken()}`)
+        .send({ reason: '  Aberto em duplicidade  ' })
+        .expect(200);
+
+      expect(incidentsService.deleteIncident).toHaveBeenCalledWith(
+        1,
+        { reason: 'Aberto em duplicidade' },
+        expect.objectContaining({ role: UserRole.CLIENT, sub: 2 }),
+      );
+    });
+
+    it.each([{}, { reason: '   ' }, { reason: 'x'.repeat(1001) }])(
+      'refuses a deletion without a usable reason (%j)',
+      async (body) => {
+        await http()
+          .post('/incidents/1/delete')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .send(body)
+          .expect(400);
+
+        expect(incidentsService.deleteIncident).not.toHaveBeenCalled();
+      },
+    );
+
     it.each([
+      ['true', true],
+      ['false', false],
+    ])(
+      'reads n1=%s from a multipart edit as a boolean',
+      async (field, value) => {
+        await http()
+          .patch('/incidents/1')
+          .set('Authorization', `Bearer ${adminToken()}`)
+          .field('n1', field)
+          .expect(200);
+
+        expect(incidentsService.updateIncident).toHaveBeenCalledWith(
+          1,
+          { n1: value },
+          expect.anything(),
+          [],
+        );
+      },
+    );
+
+    it('refuses an n1 value that is not a boolean', async () => {
+      await http()
+        .patch('/incidents/1')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ n1: 'sim' })
+        .expect(400);
+
+      expect(incidentsService.updateIncident).not.toHaveBeenCalled();
+    });
+
+    it('reads the n1 and trash filters of the list as booleans', async () => {
+      await http()
+        .get('/incidents')
+        .query({ n1: 'true', deleted: 'false' })
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+
+      expect(incidentsService.getIncidents).toHaveBeenCalledWith(
+        { n1: true, deleted: false },
+        expect.anything(),
+      );
+    });
+
+    it.each([
+      [
+        'POST /incidents/:id/delete',
+        () => http().post('/incidents/1/delete').send({ reason: 'Duplicado' }),
+      ],
       [
         'POST /incidents/:id/attachments',
         () => http().post('/incidents/1/attachments'),
@@ -368,6 +452,7 @@ describe('IncidentsController authorization', () => {
     ])('%s rejects requests without a token', async (_name, send) => {
       await send().expect(401);
 
+      expect(incidentsService.deleteIncident).not.toHaveBeenCalled();
       expect(incidentsService.addAttachments).not.toHaveBeenCalled();
       expect(incidentsService.addComment).not.toHaveBeenCalled();
     });

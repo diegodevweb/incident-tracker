@@ -21,7 +21,9 @@ const COMPANY_SELECT = {
   _count: {
     select: {
       users: { where: { role: UserRole.CLIENT } },
-      incidents: { where: { status: { not: IncidentStatus.RESOLVED } } },
+      incidents: {
+        where: { status: { not: IncidentStatus.RESOLVED }, deletedAt: null },
+      },
     },
   },
 } satisfies Prisma.CompanySelect;

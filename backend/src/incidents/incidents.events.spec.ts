@@ -290,7 +290,7 @@ describe('IncidentsService audit events', () => {
       },
     ];
 
-    it('loads the events oldest first and only the author name', async () => {
+    it('loads the events oldest first and only the author name and role', async () => {
       await service.getIncident(10, client);
 
       const [[{ include }]] = prisma.incident.findUnique.mock.calls as [
@@ -298,7 +298,7 @@ describe('IncidentsService audit events', () => {
       ];
       expect(include.events).toEqual({
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        include: { actor: { select: { name: true } } },
+        include: { actor: { select: { name: true, role: true } } },
       });
     });
 

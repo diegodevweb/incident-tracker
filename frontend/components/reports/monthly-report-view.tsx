@@ -6,12 +6,12 @@ import { useState, useTransition } from "react";
 import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { createPreventiveAction } from "@/lib/api";
 import {
-  firstResponseSlaStateLabel,
   getIncidentPriorityLabel,
   incidentPriorityLabel,
   incidentSourceLabel,
   incidentStatusLabel,
   reportExecutionStatusLabel,
+  reportSlaCells,
 } from "@/lib/labels";
 import {
   REPORT_CLIENT_NAME,
@@ -316,10 +316,10 @@ export function MonthlyReportView({
                     </td>
                     <td className="truncate">
                       <p className="truncate">
-                        {firstResponseSlaStateLabel[entry.slaState]}
+                        {reportSlaCells(entry).state}
                       </p>
                       <p className="truncate text-sm text-base-content/60">
-                        {entry.slaTarget}
+                        {reportSlaCells(entry).target}
                       </p>
                     </td>
                     <td className="truncate">

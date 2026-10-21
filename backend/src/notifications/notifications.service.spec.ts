@@ -33,7 +33,7 @@ describe('NotificationsService', () => {
     service = new NotificationsService(prisma as unknown as PrismaService);
   });
 
-  it("lists only the user's own notices, newest first, with the unread count", async () => {
+  it("lists only the user's own notices, newest first, with the unread count, leaving deleted incidents out", async () => {
     await expect(service.list(client)).resolves.toEqual({
       unreadCount: 3,
       items: [{ id: 1 }],
@@ -41,13 +41,13 @@ describe('NotificationsService', () => {
 
     expect(prisma.notification.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { userId: 2 },
+        where: { userId: 2, incident: { deletedAt: null } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: NOTIFICATIONS_LIST_SIZE,
       }),
     );
     expect(prisma.notification.count).toHaveBeenCalledWith({
-      where: { userId: 2, readAt: null },
+      where: { userId: 2, readAt: null, incident: { deletedAt: null } },
     });
   });
 

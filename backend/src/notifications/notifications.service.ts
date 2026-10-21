@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 
 // O sino mostra os mais recentes; os antigos continuam no histórico do chamado.
 export const NOTIFICATIONS_LIST_SIZE = 20;
+
+// Os avisos de um chamado excluído somem com ele (e voltam se for restaurado).
+const VISIBLE_INCIDENT = {
+  deletedAt: null,
+} satisfies Prisma.IncidentWhereInput;
 
 /** Os avisos de quem está logado. Cada um só vê e marca os próprios. */
 @Injectable()
@@ -13,7 +19,7 @@ export class NotificationsService {
   async list(user: JwtPayload) {
     const [items, unreadCount] = await Promise.all([
       this.prisma.notification.findMany({
-        where: { userId: user.sub },
+        where: { userId: user.sub, incident: VISIBLE_INCIDENT },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: NOTIFICATIONS_LIST_SIZE,
         select: {
@@ -47,7 +53,7 @@ export class NotificationsService {
 
   private countUnread(user: JwtPayload) {
     return this.prisma.notification.count({
-      where: { userId: user.sub, readAt: null },
+      where: { userId: user.sub, readAt: null, incident: VISIBLE_INCIDENT },
     });
   }
 }

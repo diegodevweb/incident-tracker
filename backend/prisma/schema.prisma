@@ -49,6 +49,10 @@ enum IncidentEventType {
   CORRECTIVE_ACTION_REMOVED
   ATTACHMENT_ADDED
   PRIORITY_CHANGED
+  N1_CLASSIFIED
+  N1_REMOVED
+  INCIDENT_DELETED
+  INCIDENT_RESTORED
 }
 
 enum NotificationType {
@@ -56,6 +60,8 @@ enum NotificationType {
   PRIORITY_CHANGED
   COMMENT_ADDED
   CORRECTIVE_ACTION_UPDATED
+  N1_CLASSIFIED
+  N1_REMOVED
 }
 
 model User {
@@ -78,6 +84,7 @@ model User {
 
   company          Company?        @relation(fields: [companyId], references: [id], onDelete: Restrict)
   createdIncidents Incident[]      @relation("IncidentCreatedBy")
+  deletedIncidents Incident[]      @relation("IncidentDeletedBy")
   incidentEvents   IncidentEvent[]
   incidentComments IncidentComment[]
   notifications    Notification[]
@@ -103,28 +110,46 @@ model Company {
 }
 
 model Incident {
-  id                Int            @id @default(autoincrement())
-  title             String
-  description       String
-  correctiveActions String?        @db.Text
-  status            IncidentStatus @default(OPEN)
-  priority          IncidentLevel  @default(INFO)
-  source            IncidentSource @default(DASHBOARD)
-  environment       String
-  companyId         Int
+  id                     Int            @id @default(autoincrement())
+  title                  String
+  description            String
+  correctiveActions      String?        @db.Text
+  status                 IncidentStatus @default(OPEN)
+  priority               IncidentLevel  @default(INFO)
+  source                 IncidentSource @default(DASHBOARD)
+  environment            String
+  companyId              Int
   /// Quem abriu pelo painel; nulo quando veio do webhook ou é anterior ao registro de autoria.
-  createdById       Int?
+  createdById            Int?
   /// Primeira mensagem ou mudança de status de um admin (ou a abertura, quando
   /// foi um admin que abriu): para o relógio do SLA de primeira resposta.
-  firstRespondedAt  DateTime?
+  firstRespondedAt       DateTime?
   /// A criticidade que valia na primeira resposta, de onde sai o prazo dela:
   /// mudar a criticidade depois não muda o resultado do SLA (ver sla.ts).
-  responsePriority  IncidentLevel?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  responsePriority       IncidentLevel?
+  /// Última reabertura (de resolvido para outro status): começa um novo prazo
+  /// de resposta, contado dela. A primeira resposta fica como estava.
+  reopenedAt             DateTime?
+  /// Primeira mensagem ou mudança de status de um admin depois da reabertura
+  /// (ou a própria reabertura, quando foi um admin que reabriu).
+  reopenRespondedAt      DateTime?
+  /// A criticidade que valia nessa resposta, como em responsePriority.
+  reopenResponsePriority IncidentLevel?
+  /// Classificado como N1: o atendimento é do suporte N1 do próprio cliente, e
+  /// o chamado fica fora do SLA da equipe.
+  n1ClassifiedAt         DateTime?
+  /// Exclusão lógica: o chamado some das listas, do relatório e dos avisos, e
+  /// o admin pode restaurar. Quem excluiu e o motivo ficam até a restauração;
+  /// o histórico fica nos eventos.
+  deletedAt              DateTime?
+  deletedById            Int?
+  deletionReason         String?        @db.Text
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 
   company   Company @relation(fields: [companyId], references: [id])
   createdBy User?   @relation("IncidentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  deletedBy User?   @relation("IncidentDeletedBy", fields: [deletedById], references: [id], onDelete: Restrict)
 
   attachments       IncidentAttachment[]
   logs              IncidentLog[]

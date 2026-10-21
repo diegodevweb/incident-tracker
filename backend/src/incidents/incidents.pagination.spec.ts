@@ -435,7 +435,7 @@ describe('IncidentsService pagination, report limits and user exposure', () => {
       await service.getErrorLogs({}, 2);
 
       expect(firstCall(prisma.incidentLog.findMany).where).toEqual({
-        incident: { companyId: 2 },
+        incident: { companyId: 2, deletedAt: null },
       });
     });
   });
@@ -448,7 +448,7 @@ describe('IncidentsService pagination, report limits and user exposure', () => {
 
       expect(firstCall(prisma.incidentLog.findFirst).where).toEqual({
         id: 7,
-        incident: { companyId: 2 },
+        incident: { companyId: 2, deletedAt: null },
       });
     });
 

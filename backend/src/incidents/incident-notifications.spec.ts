@@ -41,6 +41,22 @@ describe('noticesForIncidentUpdate', () => {
     ]);
   });
 
+  it.each([
+    [true, null, NotificationType.N1_CLASSIFIED],
+    [false, new Date('2026-10-10T12:00:00Z'), NotificationType.N1_REMOVED],
+  ])('tells n1=%s', (n1, n1ClassifiedAt, type) => {
+    expect(
+      noticesForIncidentUpdate(
+        incidentUpdateEvents({
+          current: { ...current, n1ClassifiedAt },
+          n1,
+          attachments: [],
+          actorId,
+        }),
+      ),
+    ).toEqual([{ type }]);
+  });
+
   it('tells the priority change with both priorities', () => {
     expect(
       noticesForIncidentUpdate(

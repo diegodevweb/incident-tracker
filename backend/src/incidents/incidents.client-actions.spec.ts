@@ -148,8 +148,12 @@ describe('IncidentsService client actions', () => {
 
       await service.updateIncident(10, { status: IncidentStatus.OPEN }, client);
 
+      // A reabertura começa um prazo novo, ainda sem resposta.
       expect(lastWrite().data).toEqual({
         status: IncidentStatus.OPEN,
+        reopenedAt: expect.any(Date) as Date,
+        reopenRespondedAt: null,
+        reopenResponsePriority: null,
         events: {
           create: [
             {

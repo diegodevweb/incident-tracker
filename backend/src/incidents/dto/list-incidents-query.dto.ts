@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -10,6 +11,7 @@ import {
   Min,
 } from 'class-validator';
 import { IncidentSource, IncidentStatus } from '@prisma/client';
+import { ToBoolean } from '../../common/to-boolean';
 import { MAX_VARCHAR_LENGTH } from '../limits';
 import { MAX_PAGE_SIZE } from '../pagination';
 
@@ -64,4 +66,16 @@ export class ListIncidentsQueryDto {
   @IsOptional()
   @IsDateString()
   endDate?: string;
+
+  /** true: só os N1; false: só os da equipe. */
+  @IsOptional()
+  @ToBoolean()
+  @IsBoolean()
+  n1?: boolean;
+
+  /** A lixeira: só os excluídos (só o admin). */
+  @IsOptional()
+  @ToBoolean()
+  @IsBoolean()
+  deleted?: boolean;
 }

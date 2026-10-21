@@ -11,6 +11,7 @@ import { getInitials } from "@/lib/session";
 import type { Incident } from "@/lib/types";
 import { IncidentAttachments } from "./incident-attachments";
 import { IncidentConversation } from "./incident-conversation";
+import { IncidentDeletedNotice } from "./incident-deletion";
 import { IncidentDetails } from "./incident-details";
 import { IncidentManagementPanel } from "./incident-management-panel";
 import { IncidentTimeline } from "./incident-timeline";
@@ -80,7 +81,19 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
     }
   }
 
+  // O cliente não vê mais o chamado que excluiu; o admin fica na página, que
+  // passa a mostrar o chamado na lixeira, com o restaurar.
+  function handleDeleted() {
+    if (activeRole === "CLIENT") {
+      router.push("/dashboard/incidents");
+      return;
+    }
+
+    void refreshIncident();
+  }
+
   const displayName = session?.user.name ?? "Usuário";
+  const deleted = Boolean(incident?.deletedAt);
 
   return (
     <div>
@@ -112,33 +125,43 @@ export function IncidentDetailsPageClient({ id }: { id: number }) {
               <div className="alert alert-error text-sm">{refreshError}</div>
             ) : null}
 
+            <IncidentDeletedNotice
+              incident={incident}
+              onRestored={setIncident}
+            />
+
             <IncidentDetails
               incident={incident}
               role={activeRole}
               onUpdated={setIncident}
               onRefresh={refreshIncident}
+              onDeleted={handleDeleted}
             />
 
             <IncidentConversation
               incident={incident}
               role={activeRole}
+              readOnly={deleted}
               onUpdated={setIncident}
               onRefresh={refreshIncident}
             />
 
             <IncidentTimeline incident={incident} onRefresh={refreshIncident} />
 
-            <div className="grid gap-6">
-              <IncidentManagementPanel
-                incident={incident}
-                role={activeRole}
-                onUpdated={setIncident}
-                onRefresh={refreshIncident}
-              />
-            </div>
+            {deleted ? null : (
+              <div className="grid gap-6">
+                <IncidentManagementPanel
+                  incident={incident}
+                  role={activeRole}
+                  onUpdated={setIncident}
+                  onRefresh={refreshIncident}
+                />
+              </div>
+            )}
 
             <IncidentAttachments
               incident={incident}
+              readOnly={deleted}
               onUpdated={setIncident}
               onRefresh={refreshIncident}
             />
