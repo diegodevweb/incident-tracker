@@ -1,11 +1,16 @@
+"use client";
+
+import { useState } from "react";
 import { RefreshButton } from "@/components/dashboard/refresh-button";
 import {
+  N1_LABEL,
   incidentAuthorLabel,
   incidentEnvironmentLabel,
   incidentSourceLabel,
 } from "@/lib/labels";
 import type { Incident } from "@/lib/types";
 import { IncidentClientActions } from "./incident-client-actions";
+import { IncidentDeleteForm } from "./incident-deletion";
 import { IncidentPriorityBadge } from "./incident-priority-badge";
 import { IncidentSlaCard } from "./incident-sla";
 import { IncidentStatusBadge } from "./incident-status-badge";
@@ -22,12 +27,16 @@ export function IncidentDetails({
   role = "ADMIN",
   onUpdated,
   onRefresh,
+  onDeleted,
 }: {
   incident: Incident;
   role?: "ADMIN" | "CLIENT";
   onUpdated: (incident: Incident) => void;
   onRefresh: () => Promise<void>;
+  onDeleted: () => void;
 }) {
+  const [isDeleting, setIsDeleting] = useState(false);
+
   return (
     <section className="app-surface card border">
       <div className="card-body gap-3">
@@ -41,9 +50,38 @@ export function IncidentDetails({
             <span className="badge badge-outline">
               {incidentSourceLabel[incident.source]}
             </span>
+            {incident.n1ClassifiedAt ? (
+              <span className="badge badge-neutral">{N1_LABEL}</span>
+            ) : null}
+            {incident.deletedAt ? (
+              <span className="badge badge-warning">Excluído</span>
+            ) : null}
           </div>
-          <RefreshButton label="Atualizar chamado" onRefresh={onRefresh} />
+          <div className="flex items-center gap-1">
+            {incident.canDelete && !isDeleting ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost text-error"
+                onClick={() => setIsDeleting(true)}
+              >
+                Excluir
+              </button>
+            ) : null}
+            <RefreshButton label="Atualizar chamado" onRefresh={onRefresh} />
+          </div>
         </div>
+
+        {isDeleting ? (
+          <IncidentDeleteForm
+            incident={incident}
+            role={role}
+            onCancel={() => setIsDeleting(false)}
+            onDeleted={() => {
+              setIsDeleting(false);
+              onDeleted();
+            }}
+          />
+        ) : null}
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_28rem]">
           <div className="space-y-3">
@@ -76,7 +114,7 @@ export function IncidentDetails({
           </div>
 
           <div className="space-y-3">
-            {role === "CLIENT" ? (
+            {role === "CLIENT" && !incident.deletedAt ? (
               <IncidentClientActions incident={incident} onUpdated={onUpdated} />
             ) : null}
 
@@ -102,7 +140,7 @@ export function IncidentDetails({
               </div>
             </div>
 
-            <IncidentSlaCard incident={incident} />
+            <IncidentSlaCard incident={incident} role={role} />
           </div>
         </div>
       </div>

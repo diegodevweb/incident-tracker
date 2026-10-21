@@ -52,6 +52,18 @@ export function IncidentList({
                     <p className="max-w-md text-sm text-base-content/60">
                       {incident.description}
                     </p>
+                    {incident.deletedAt ? (
+                      <p className="max-w-md text-sm text-warning">
+                        Excluído
+                        {incident.deletedByName
+                          ? ` por ${incident.deletedByName}`
+                          : ""}{" "}
+                        em {formatDate(incident.deletedAt)}
+                        {incident.deletionReason
+                          ? `: ${incident.deletionReason}`
+                          : ""}
+                      </p>
+                    ) : null}
                   </Link>
                 </td>
                 <td>

@@ -11,10 +11,13 @@ const MAX_FILES_PER_UPLOAD = 5;
 /** Anexos do chamado e o envio de evidência depois de aberto, para os dois papéis. */
 export function IncidentAttachments({
   incident,
+  readOnly = false,
   onUpdated,
   onRefresh,
 }: {
   incident: Incident;
+  /** Chamado excluído: só mostra os anexos. */
+  readOnly?: boolean;
   onUpdated: (incident: Incident) => void;
   onRefresh: () => Promise<void>;
 }) {
@@ -85,36 +88,38 @@ export function IncidentAttachments({
           </div>
         )}
 
-        <form className="mt-6 space-y-3" onSubmit={handleSubmit}>
-          <label className="form-control">
-            <span className="label-text mb-2">Anexar evidência</span>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
-              multiple
-              onChange={(event) =>
-                setFiles(Array.from(event.target.files ?? []))
-              }
-              className="file-input file-input-bordered w-full"
-            />
-            <span className="mt-2 text-xs text-base-content/60">
-              Até {MAX_FILES_PER_UPLOAD} prints por envio, em PNG ou JPEG.
-            </span>
-          </label>
+        {readOnly ? null : (
+          <form className="mt-6 space-y-3" onSubmit={handleSubmit}>
+            <label className="form-control">
+              <span className="label-text mb-2">Anexar evidência</span>
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                multiple
+                onChange={(event) =>
+                  setFiles(Array.from(event.target.files ?? []))
+                }
+                className="file-input file-input-bordered w-full"
+              />
+              <span className="mt-2 text-xs text-base-content/60">
+                Até {MAX_FILES_PER_UPLOAD} prints por envio, em PNG ou JPEG.
+              </span>
+            </label>
 
-          {error ? <div className="alert alert-error text-sm">{error}</div> : null}
+            {error ? <div className="alert alert-error text-sm">{error}</div> : null}
 
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="btn btn-primary btn-sm"
-              disabled={isPending || !files.length}
-            >
-              {isPending ? "Enviando..." : "Enviar evidência"}
-            </button>
-          </div>
-        </form>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="btn btn-primary btn-sm"
+                disabled={isPending || !files.length}
+              >
+                {isPending ? "Enviando..." : "Enviar evidência"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </aside>
   );

@@ -25,11 +25,14 @@ function formatDate(value: string) {
 export function IncidentConversation({
   incident,
   role,
+  readOnly = false,
   onUpdated,
   onRefresh,
 }: {
   incident: Incident;
   role: UserRole;
+  /** Chamado excluído: a conversa fica só para leitura. */
+  readOnly?: boolean;
   onUpdated: (incident: Incident) => void;
   onRefresh: () => Promise<void>;
 }) {
@@ -105,7 +108,7 @@ export function IncidentConversation({
         </div>
       )}
 
-      {canWrite ? (
+      {readOnly ? null : canWrite ? (
         <form className="space-y-3" onSubmit={handleSubmit}>
           <label className="form-control">
             <span className="label-text mb-2">

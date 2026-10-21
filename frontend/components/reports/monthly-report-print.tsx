@@ -2,12 +2,12 @@
 
 import { useEffect, type ReactNode } from "react";
 import {
-  firstResponseSlaStateLabel,
   getIncidentPriorityLabel,
   incidentPriorityLabel,
   incidentSourceLabel,
   incidentStatusLabel,
   reportExecutionStatusLabel,
+  reportSlaCells,
 } from "@/lib/labels";
 import {
   REPORT_CLIENT_NAME,
@@ -192,9 +192,11 @@ export function MonthlyReportPrint({
                 <td className={cell}>{incidentPriorityLabel[entry.errorType]}</td>
                 <td className={cell}>{incidentSourceLabel[entry.source]}</td>
                 <td className={cell}>
-                  {firstResponseSlaStateLabel[entry.slaState]}
+                  {reportSlaCells(entry).state}
                   <br />
-                  <span className="text-zinc-600">{entry.slaTarget}</span>
+                  <span className="text-zinc-600">
+                    {reportSlaCells(entry).target}
+                  </span>
                 </td>
                 <td className={cell}>
                   {getIncidentPriorityLabel(entry.priority, entry.source)}

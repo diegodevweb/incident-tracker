@@ -4,7 +4,6 @@ import type {
   Company,
   CompanyListPage,
   CompanyUser,
-  FirstResponseSla,
   Incident,
   IncidentComment,
   IncidentEnvironment,
@@ -16,6 +15,7 @@ import type {
   IncidentStatus,
   MonthlyReport,
   NotificationList,
+  ResponseSla,
   SlaRule,
   WebhookKey,
 } from "./types";
@@ -35,6 +35,12 @@ type BackendIncident = {
   company: { id: number; name: string };
   // A criação pelo webhook não traz o autor.
   createdBy?: { id: number; name: string } | null;
+  n1ClassifiedAt?: string | null;
+  deletedAt?: string | null;
+  deletedBy?: { id: number; name: string } | null;
+  deletionReason?: string | null;
+  // Só o detalhe diz se quem está logado pode excluir.
+  canDelete?: boolean;
   // A listagem não traz anexos nem logs; só o detalhe.
   attachments?: {
     id: number;
@@ -58,7 +64,7 @@ type BackendIncident = {
     metadata?: Record<string, unknown> | null;
   }[];
   comments?: IncidentComment[];
-  sla: FirstResponseSla;
+  sla: ResponseSla | null;
 };
 
 /**
@@ -162,6 +168,11 @@ function mapIncident(incident: BackendIncident): Incident {
     })),
     comments: incident.comments ?? [],
     sla: incident.sla,
+    n1ClassifiedAt: incident.n1ClassifiedAt ?? null,
+    deletedAt: incident.deletedAt ?? null,
+    deletedByName: incident.deletedBy?.name ?? null,
+    deletionReason: incident.deletionReason ?? null,
+    canDelete: incident.canDelete ?? false,
   };
 }
 
@@ -248,6 +259,8 @@ export async function updateIncident(
     status?: IncidentStatus;
     priority?: IncidentLevel;
     correctiveActions?: string;
+    /** Só o admin classifica como N1. */
+    n1?: boolean;
     correctiveAttachments?: File[];
   },
 ) {
@@ -266,6 +279,10 @@ export async function updateIncident(
 
     if (fields.correctiveActions !== undefined) {
       body.set("correctiveActions", fields.correctiveActions);
+    }
+
+    if (fields.n1 !== undefined) {
+      body.set("n1", String(fields.n1));
     }
 
     correctiveAttachments?.forEach((attachment) => {
@@ -292,6 +309,22 @@ export async function addIncidentAttachments(id: number, files: File[]) {
   const data = await apiFetch<BackendIncident>(`/incidents/${id}/attachments`, {
     method: "POST",
     body: formData,
+  });
+
+  return mapIncident(data);
+}
+
+/** Exclusão lógica, com o motivo; o admin pode restaurar. */
+export async function deleteIncident(id: number, reason: string) {
+  return apiFetch<{ message: string }>(`/incidents/${id}/delete`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function restoreIncident(id: number) {
+  const data = await apiFetch<BackendIncident>(`/incidents/${id}/restore`, {
+    method: "POST",
   });
 
   return mapIncident(data);

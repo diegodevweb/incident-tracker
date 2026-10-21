@@ -1,10 +1,10 @@
 import {
-  firstResponseSlaStateLabel,
   getIncidentPriorityLabel,
   incidentPriorityLabel,
   incidentSourceLabel,
   incidentStatusLabel,
   reportExecutionStatusLabel,
+  reportSlaCells,
 } from "./labels";
 import {
   formatReportDate,
@@ -127,8 +127,8 @@ function incidentsTable(report: MonthlyReport): ReportTable {
       withTime(entry.createdAt),
       incidentPriorityLabel[entry.errorType],
       incidentSourceLabel[entry.source],
-      firstResponseSlaStateLabel[entry.slaState],
-      entry.slaTarget,
+      reportSlaCells(entry).state,
+      reportSlaCells(entry).target,
       getIncidentPriorityLabel(entry.priority, entry.source),
       entry.description,
       entry.latestLogMessage ?? "",

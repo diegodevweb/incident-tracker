@@ -21,6 +21,8 @@ const filterOrder: IncidentFilter[] = [
   "WEBHOOK",
   "DASHBOARD",
   "PRODUCTION",
+  "N1",
+  "DELETED",
 ];
 
 type IncidentsPageClientProps = {
@@ -35,7 +37,13 @@ type IncidentsPageClientProps = {
 };
 
 function resolveFilter(value?: string): IncidentFilter {
-  if (value === "WEBHOOK" || value === "DASHBOARD" || value === "PRODUCTION") {
+  if (
+    value === "WEBHOOK" ||
+    value === "DASHBOARD" ||
+    value === "PRODUCTION" ||
+    value === "N1" ||
+    value === "DELETED"
+  ) {
     return value;
   }
 
@@ -75,6 +83,9 @@ function buildApiQuery(
           ? "DASHBOARD"
           : params.source,
     environment: filter === "PRODUCTION" ? "production" : undefined,
+    n1: filter === "N1" ? "true" : undefined,
+    // A lixeira: só os excluídos, que as outras listas não mostram.
+    deleted: filter === "DELETED" ? "true" : undefined,
     company: params.company,
     page: params.page,
   };

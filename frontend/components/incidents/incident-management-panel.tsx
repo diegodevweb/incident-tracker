@@ -3,7 +3,11 @@
 import { useRef, useState, useTransition } from "react";
 import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { updateIncident } from "@/lib/api";
-import { getIncidentPriorityLabel, incidentStatusLabel } from "@/lib/labels";
+import {
+  N1_LABEL,
+  getIncidentPriorityLabel,
+  incidentStatusLabel,
+} from "@/lib/labels";
 import type {
   Incident,
   IncidentAttachment,
@@ -116,6 +120,16 @@ function IncidentFollowUp({
           </p>
         </div>
 
+        {incident.n1ClassifiedAt ? (
+          <div className="app-surface-muted flex flex-wrap items-center gap-3 rounded-2xl border p-4">
+            <span className="badge badge-neutral">{N1_LABEL}</span>
+            <p className="text-sm text-base-content/70">
+              A equipe classificou este chamado como N1: o atendimento fica com
+              o suporte N1 da sua empresa.
+            </p>
+          </div>
+        ) : null}
+
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <p className="font-medium">Criticidade</p>
@@ -190,6 +204,7 @@ function IncidentManagementForm({
   const [correctiveActions, setCorrectiveActions] = useServerDraft(
     incident.correctiveActions ?? "",
   );
+  const [n1, setN1] = useServerDraft(Boolean(incident.n1ClassifiedAt));
   const [correctiveAttachmentFiles, setCorrectiveAttachmentFiles] = useState<File[]>([]);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -209,6 +224,7 @@ function IncidentManagementForm({
           status,
           priority,
           correctiveActions,
+          n1,
           correctiveAttachments: correctiveAttachmentFiles,
         });
         onUpdated(updatedIncident);
@@ -276,12 +292,31 @@ function IncidentManagementForm({
             </label>
           </div>
 
-          {incident.sla.respondedAt ? null : (
+          {incident.sla && !incident.sla.respondedAt ? (
             <p className="text-sm text-base-content/60">
-              Ainda sem primeira resposta: mudar o status ou escrever na conversa
-              registra a resposta do SLA. Até lá, o prazo segue a criticidade.
+              {incident.sla.cycle === "REOPENING"
+                ? "Reaberto e ainda sem resposta: mudar o status ou escrever na conversa registra a resposta à reabertura."
+                : "Ainda sem primeira resposta: mudar o status ou escrever na conversa registra a resposta do SLA."}{" "}
+              Até lá, o prazo segue a criticidade.
             </p>
-          )}
+          ) : null}
+
+          <label className="app-surface-muted flex cursor-pointer items-start gap-3 rounded-2xl border p-4">
+            <input
+              type="checkbox"
+              className="toggle toggle-sm mt-0.5"
+              checked={n1}
+              onChange={(event) => setN1(event.target.checked)}
+            />
+            <span>
+              <span className="block font-medium">Chamado N1</span>
+              <span className="block text-sm text-base-content/60">
+                Atendimento do suporte N1 do cliente, não da equipe. O chamado
+                sai do SLA de resposta e da taxa de prazo do relatório, e a
+                empresa é avisada.
+              </span>
+            </span>
+          </label>
 
           <label className="form-control">
             <span className="label-text mb-2">Ações corretivas</span>

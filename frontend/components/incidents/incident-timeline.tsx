@@ -113,6 +113,35 @@ function getEventContent(event: IncidentEvent, source: IncidentSource) {
         description: "Atendimento concluído e incidente marcado como resolvido.",
         metadata: null,
       };
+    case "N1_CLASSIFIED":
+      return {
+        title: "Classificado como N1",
+        description:
+          "O atendimento passou para o suporte N1 do cliente, fora do SLA da equipe.",
+        metadata: null,
+      };
+    case "N1_REMOVED":
+      return {
+        title: "Classificação N1 retirada",
+        description:
+          "O chamado voltou para a equipe de suporte, com o prazo de resposta.",
+        metadata: null,
+      };
+    case "INCIDENT_DELETED":
+      return {
+        title: "Chamado excluído",
+        description:
+          typeof metadata.reason === "string" && metadata.reason.trim()
+            ? `Motivo: ${metadata.reason}`
+            : "O chamado foi excluído.",
+        metadata: null,
+      };
+    case "INCIDENT_RESTORED":
+      return {
+        title: "Chamado restaurado",
+        description: "O chamado saiu da lixeira e voltou a valer.",
+        metadata: null,
+      };
     default:
       return {
         title: "Evento técnico",

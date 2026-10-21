@@ -1,12 +1,13 @@
 import type {
-  FirstResponseSlaState,
   Incident,
   IncidentEnvironment,
   IncidentFilter,
   IncidentLevel,
   IncidentSource,
   IncidentStatus,
+  MonthlyReportEntry,
   ReportExecutionStatus,
+  ResponseSlaState,
   UserRole,
 } from "./types";
 
@@ -31,7 +32,7 @@ export const incidentStatusLabel: Record<IncidentStatus, string> = {
   RESOLVED: "Resolvido",
 };
 
-export const firstResponseSlaStateLabel: Record<FirstResponseSlaState, string> = {
+export const slaStateLabel: Record<ResponseSlaState, string> = {
   ON_TIME: "No prazo",
   AT_RISK: "Vence em breve",
   BREACHED: "Atrasado",
@@ -39,6 +40,20 @@ export const firstResponseSlaStateLabel: Record<FirstResponseSlaState, string> =
   MISSED: "Respondido fora do prazo",
   CLOSED: "Resolvido sem resposta",
 };
+
+/** O selo dos chamados N1, que o suporte N1 do próprio cliente atende. */
+export const N1_LABEL = "N1";
+
+/** Situação e meta do SLA de uma linha do relatório, com os N1 à parte. */
+export function reportSlaCells(
+  entry: Pick<MonthlyReportEntry, "n1" | "slaState" | "slaTarget">,
+) {
+  if (entry.n1 || !entry.slaState) {
+    return { state: "N1: fora do SLA", target: "Suporte N1 do cliente" };
+  }
+
+  return { state: slaStateLabel[entry.slaState], target: entry.slaTarget };
+}
 
 export const incidentSourceLabel: Record<IncidentSource, string> = {
   WEBHOOK: "Webhook",
@@ -67,6 +82,8 @@ export const incidentFilterLabel: Record<IncidentFilter, string> = {
   WEBHOOK: "Webhook",
   DASHBOARD: "Dashboard",
   PRODUCTION: "Produção",
+  N1: "N1",
+  DELETED: "Excluídos",
 };
 
 export const userRoleLabel: Record<UserRole, string> = {

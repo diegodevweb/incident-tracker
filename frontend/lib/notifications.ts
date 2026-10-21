@@ -48,5 +48,9 @@ export function notificationText(notification: AppNotification) {
       return "Nova mensagem da equipe de suporte";
     case "CORRECTIVE_ACTION_UPDATED":
       return "A equipe registrou a solução aplicada";
+    case "N1_CLASSIFIED":
+      return "Classificado como N1: o atendimento fica com o suporte N1 da sua empresa";
+    case "N1_REMOVED":
+      return "A classificação N1 foi retirada: o chamado voltou para a equipe de suporte";
   }
 }
