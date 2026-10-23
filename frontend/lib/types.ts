@@ -221,6 +221,8 @@ export type SlaRule = {
   title: string;
   description: string;
   firstResponseTarget: string;
+  /** Situações do dia a dia que se encaixam no nível; ausente em API antiga. */
+  examples?: string[];
 };
 
 export type MonthlyReportEntry = {

@@ -14,7 +14,9 @@ import type { IncidentEnvironment, IncidentLevel } from "@/lib/types";
 import { SlaRuleList, useSlaRules } from "./sla-rules";
 
 const priorityOptions: IncidentLevel[] = ["CRITICAL", "ERROR", "WARNING", "INFO"];
-const environmentOptions: IncidentEnvironment[] = ["production", "staging", "local"];
+// "local" continua válido na API (webhooks e chamados antigos), mas quem abre
+// chamado pelo painel só fala de produção ou homologação.
+const environmentOptions: IncidentEnvironment[] = ["production", "staging"];
 
 function RequiredMark() {
   return <span className="text-error"> *</span>;
@@ -111,6 +113,20 @@ export function NewIncidentForm() {
               possível para acelerar o atendimento.
             </p>
           </div>
+
+          {isClient ? (
+            <div role="note" className="alert alert-warning text-sm">
+              <div>
+                <p className="font-medium">
+                  Antes de abrir um chamado, verifique a seção de dúvidas.
+                </p>
+                <p className="mt-1">
+                  Chamados de nível N1 ou dúvidas simples que já estão na
+                  documentação serão devolvidos à equipe da Attimo.
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div className="grid gap-4 md:grid-cols-2">

@@ -80,6 +80,18 @@ export function SlaRuleList({
             </div>
             <p className="mt-1">{rule.title}</p>
             <p className="mt-1 text-base-content/60">{rule.description}</p>
+            {rule.examples?.length ? (
+              <div className="mt-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-base-content/50">
+                  Exemplos
+                </p>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-base-content/70">
+                  {rule.examples.map((example) => (
+                    <li key={example}>{example}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </li>
         ))}
       </ul>
