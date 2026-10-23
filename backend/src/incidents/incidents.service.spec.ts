@@ -117,6 +117,22 @@ describe('IncidentsService access rules', () => {
     company: {},
   });
 
+  describe('getSlaRules', () => {
+    it('traz exemplos concretos em todas as criticidades', () => {
+      const rules = service.getSlaRules();
+
+      expect(rules.map((rule) => rule.priority)).toEqual([
+        IncidentLevel.CRITICAL,
+        IncidentLevel.ERROR,
+        IncidentLevel.WARNING,
+        IncidentLevel.INFO,
+      ]);
+      for (const rule of rules) {
+        expect(rule.examples.length).toBeGreaterThanOrEqual(2);
+      }
+    });
+  });
+
   describe('createIncident', () => {
     const body = {
       title: 'Erro na emissão',
