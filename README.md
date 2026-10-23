@@ -220,7 +220,7 @@ Unit tests need no database. The e2e suite (`npm run test:e2e`) boots the whole 
 * **Backend e2e:** applies every migration from scratch on MySQL 8, checks that the migrations match `schema.prisma`, then runs the e2e suite with SeaweedFS as S3
 * **Frontend:** lint and production build
 
-`.github/workflows/deploy.yml` then deploys each push to `main` that passed CI (see [Automatic deploys](#automatic-deploys)).
+`.github/workflows/deploy.yml` publishes `main` to production when you run it by hand (see [Deploying](#deploying)).
 
 ---
 
@@ -301,23 +301,23 @@ It asks for the password in the terminal (see [Creating admins](#creating-admins
 * The webhook answers `201` with a company key and `401` without it
 * `https://<your domain>/health` shows the panel's "not found" page: the API itself is not reachable from the internet, only the three webhook routes are
 
-**8. Turn on automatic deploys**
+**8. Set up the deploy button**
 
 1. On the server, as the user that owns the clone (not root), run once:
 
    ```bash
-   deploy/setup-auto-deploy.sh <your domain>
+   deploy/setup-deploy-key.sh <your domain>
    ```
 
    It creates an SSH key that can only run `deploy/deploy.sh` (no shell, no forwarding) and prints the values for GitHub. If SSH listens on another port, pass it as a second argument
-2. On GitHub, under **Settings → Environments**, create the `production` environment and add each printed value as an environment secret with the same name: `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_SSH_KEY` (with its `BEGIN` and `END` lines) and, if printed, `DEPLOY_PORT`. Then clear the server's terminal
-3. Run **Actions → Deploy → Run workflow** once and check that it ends green
+2. On GitHub, under **Settings → Secrets and variables → Actions**, add each printed value as a repository secret with the same name: `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS`, `DEPLOY_SSH_KEY` (with its `BEGIN` and `END` lines) and, if printed, `DEPLOY_PORT`. Then clear the server's terminal
+3. Run **Actions → Deploy (PROD) → Run workflow** once and check that it ends green
 
-#### Automatic deploys
+#### Deploying
 
-`.github/workflows/deploy.yml` runs after CI passes on a push to `main` and calls `deploy/deploy.sh` on the server with that commit (see Update below for what the script does). A deploy that fails rolls back by itself and turns the run red, and GitHub e-mails whoever merged. Deploys never run at the same time, and an older commit is never deployed over a newer one when merges land close together. **Actions → Deploy → Run workflow** deploys the latest `main` on demand.
+Merging into `main` does not deploy. To publish, open **Actions → Deploy (PROD) → Run workflow** and keep `main` selected. The workflow (`.github/workflows/deploy.yml`) waits for CI to finish on the latest commit of `main`, stops if CI did not pass, and then calls `deploy/deploy.sh` on the server with that commit (see Update below for what the script does). A deploy that fails rolls back by itself and turns the run red. Two deploys never run at the same time.
 
-Until the `DEPLOY_*` secrets exist, the workflow only logs a notice and does nothing. Running `deploy/setup-auto-deploy.sh` again replaces the key (update `DEPLOY_SSH_KEY` afterwards); deleting the `DEPLOY_HOST` secret turns automatic deploys off.
+Until the `DEPLOY_*` secrets exist, the workflow only logs a notice and does nothing. Running `deploy/setup-deploy-key.sh` again replaces the key (update `DEPLOY_SSH_KEY` afterwards); deleting the `DEPLOY_HOST` secret turns the button off.
 
 #### Day to day
 
@@ -341,7 +341,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 On a new server, bring up only the database first (`docker compose -f docker-compose.prod.yml up -d mysql`), restore with the second command, then run `up -d --build` for the rest. The migrations are in the backup, so `migrate` finds nothing left to apply.
 
-**Update.** Merging into `main` deploys by itself once CI passes (see [Automatic deploys](#automatic-deploys)). By hand, on the server:
+**Update.** Use the deploy button (see [Deploying](#deploying)). Without it, on the server:
 
 ```bash
 deploy/deploy.sh

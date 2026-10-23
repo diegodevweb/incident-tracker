@@ -5,8 +5,9 @@
 #   deploy/deploy.sh          # o commit mais recente da main do GitHub
 #   deploy/deploy.sh <sha>    # um commit específico (precisa estar na main)
 #
-# A pipeline (.github/workflows/deploy.yml) chega aqui por SSH, com uma chave
-# que só consegue rodar este script; o commit vem em SSH_ORIGINAL_COMMAND.
+# O botão de deploy (.github/workflows/deploy.yml) chega aqui por SSH, com uma
+# chave que só consegue rodar este script (ver deploy/setup-deploy-key.sh); o
+# commit vem em SSH_ORIGINAL_COMMAND.
 #
 # Passos: backup do banco, build das imagens, subida esperando os healthchecks.
 # Se algo falhar, voltam o código e as imagens anteriores. O banco não volta
