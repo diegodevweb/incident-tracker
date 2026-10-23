@@ -162,6 +162,27 @@ export class IncidentsService {
     private readonly storageService: StorageService,
   ) {}
 
+  // Exemplos que o cliente reconhece na própria rotina: sem eles, tudo vira
+  // "crítico". A regra de ouro é perguntar se dá para seguir trabalhando.
+  private readonly slaExamplesByPriority: Record<IncidentLevel, string[]> = {
+    CRITICAL: [
+      'Ninguém consegue entrar no sistema, ou a tela abre em branco ou com erro para todos.',
+      'Nenhuma emissão sai, em nenhum caixa ou usuário, e não existe outro jeito de emitir.',
+    ],
+    ERROR: [
+      'A emissão falha só para um produto, filial ou cliente; as demais seguem emitindo.',
+      'A emissão funciona, mas só depois de várias tentativas ou levando muito mais tempo que o normal.',
+    ],
+    WARNING: [
+      'Um relatório mostra um valor errado, mas dá para conferir o certo em outra tela.',
+      'Um botão ou campo não funciona, mas a mesma ação é feita por outro caminho.',
+    ],
+    INFO: [
+      'Ajuste de texto, nome de campo ou posição de um botão.',
+      'Sugestão de melhoria ou dúvida sobre um comportamento que não está na documentação.',
+    ],
+  };
+
   private readonly slaRules = (
     Object.entries(FIRST_RESPONSE_TARGET_LABEL) as [IncidentLevel, string][]
   ).map(([priority, firstResponseTarget]) => ({
@@ -183,6 +204,7 @@ export class IncidentsService {
           : priority === IncidentLevel.WARNING
             ? 'Problemas que exigem atenção, porém com fluxo alternativo possível.'
             : 'Solicitações sem indisponibilidade e com baixo impacto operacional.',
+    examples: this.slaExamplesByPriority[priority],
   }));
 
   /** O que cada criticidade quer dizer e o prazo de primeira resposta. */
