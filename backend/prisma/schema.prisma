@@ -112,7 +112,7 @@ model Company {
 model Incident {
   id                     Int            @id @default(autoincrement())
   title                  String
-  description            String
+  description            String         @db.Text
   correctiveActions      String?        @db.Text
   status                 IncidentStatus @default(OPEN)
   priority               IncidentLevel  @default(INFO)
@@ -175,7 +175,7 @@ model IncidentAttachment {
 model IncidentLog {
   id         Int           @id @default(autoincrement())
   incidentId Int
-  message    String
+  message    String        @db.Text
   level      IncidentLevel @default(INFO)
   occurredAt DateTime?
   metadata   Json?

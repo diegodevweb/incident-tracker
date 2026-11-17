@@ -89,7 +89,7 @@ export function IncidentDetails({
               <h2 className="text-2xl font-semibold tracking-tight">
                 {incident.title}
               </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-base-content/65">
+              <p className="mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-6 text-base-content/65">
                 {incident.description}
               </p>
             </div>

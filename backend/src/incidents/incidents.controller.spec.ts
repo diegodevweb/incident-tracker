@@ -14,7 +14,11 @@ import {
 } from '../webhook-keys/webhook-keys.service';
 import { IncidentsController } from './incidents.controller';
 import { IncidentsService } from './incidents.service';
-import { MAX_INCIDENT_ATTACHMENTS, MAX_UPLOAD_FILE_BYTES } from './limits';
+import {
+  MAX_INCIDENT_ATTACHMENTS,
+  MAX_LONG_TEXT_LENGTH,
+  MAX_UPLOAD_FILE_BYTES,
+} from './limits';
 
 const JWT_SECRET = 'test-secret-with-more-than-32-bytes-of-length';
 
@@ -532,14 +536,27 @@ describe('IncidentsController authorization', () => {
       expect(incidentsService.addComment).not.toHaveBeenCalled();
     });
 
-    it('rejects a description longer than the column with 400 instead of failing in the database', async () => {
+    it('rejects a description longer than the limit with 400 instead of failing in the database', async () => {
       await http()
         .post('/incidents')
         .set('Authorization', `Bearer ${clientToken()}`)
-        .send({ ...validTicket, description: 'x'.repeat(192) })
+        .send({
+          ...validTicket,
+          description: 'x'.repeat(MAX_LONG_TEXT_LENGTH + 1),
+        })
         .expect(400);
 
       expect(incidentsService.createIncident).not.toHaveBeenCalled();
+    });
+
+    it('accepts a detailed description up to the limit', async () => {
+      await http()
+        .post('/incidents')
+        .set('Authorization', `Bearer ${clientToken()}`)
+        .send({ ...validTicket, description: 'x'.repeat(MAX_LONG_TEXT_LENGTH) })
+        .expect(201);
+
+      expect(incidentsService.createIncident).toHaveBeenCalledTimes(1);
     });
 
     it('accepts corrective attachments in the multipart field the frontend sends', async () => {

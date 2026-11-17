@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { IncidentLevel, IncidentStatus } from '@prisma/client';
-import { MAX_VARCHAR_LENGTH } from '../limits';
+import { MAX_LONG_TEXT_LENGTH, MAX_VARCHAR_LENGTH } from '../limits';
 
 export class CreateIncidentDto {
   /** Só o admin informa (obrigatório para ele); o cliente abre na própria empresa. */
@@ -26,7 +26,7 @@ export class CreateIncidentDto {
 
   @IsString()
   @IsNotEmpty()
-  @MaxLength(MAX_VARCHAR_LENGTH)
+  @MaxLength(MAX_LONG_TEXT_LENGTH)
   description!: string;
 
   @IsString()

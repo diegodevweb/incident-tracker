@@ -49,7 +49,7 @@ export function IncidentList({
                     className="block space-y-1"
                   >
                     <p className="font-medium">{incident.title}</p>
-                    <p className="max-w-md text-sm text-base-content/60">
+                    <p className="line-clamp-2 max-w-md break-words text-sm text-base-content/60">
                       {incident.description}
                     </p>
                     {incident.deletedAt ? (
