@@ -18,6 +18,9 @@ const priorityOptions: IncidentLevel[] = ["CRITICAL", "ERROR", "WARNING", "INFO"
 // chamado pelo painel só fala de produção ou homologação.
 const environmentOptions: IncidentEnvironment[] = ["production", "staging"];
 
+// Mesmo limite da API.
+const MAX_DESCRIPTION_LENGTH = 10_000;
+
 function RequiredMark() {
   return <span className="text-error"> *</span>;
 }
@@ -196,6 +199,7 @@ export function NewIncidentForm() {
                 <textarea
                   required
                   rows={6}
+                  maxLength={MAX_DESCRIPTION_LENGTH}
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   placeholder="Informe sintomas, passos para reproduzir, horário do impacto e qualquer contorno já tentado."
