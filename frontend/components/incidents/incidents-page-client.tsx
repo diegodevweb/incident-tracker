@@ -14,7 +14,12 @@ import type {
   UserRole,
 } from "@/lib/types";
 import { IncidentList } from "./incident-list";
-import { IncidentsPagination } from "./incidents-pagination";
+import {
+  buildIncidentsHref,
+  DEFAULT_PAGE_SIZE,
+  IncidentsPagination,
+  PAGE_SIZE_OPTIONS,
+} from "./incidents-pagination";
 
 const filterOrder: IncidentFilter[] = [
   "ALL",
@@ -33,6 +38,7 @@ type IncidentsPageClientProps = {
     source?: string;
     company?: string;
     page?: string;
+    pageSize?: string;
   };
 };
 
@@ -56,6 +62,12 @@ function resolvePage(value?: string) {
   return Number.isInteger(page) && page >= 1 ? page : 1;
 }
 
+function resolvePageSize(value?: string) {
+  const pageSize = Number(value);
+
+  return PAGE_SIZE_OPTIONS.includes(pageSize) ? pageSize : DEFAULT_PAGE_SIZE;
+}
+
 // O cliente vê todos os chamados da empresa dele (a API já restringe),
 // abertos por qualquer pessoa da equipe ou pela integração.
 function buildApiQuery(
@@ -67,10 +79,11 @@ function buildApiQuery(
     source?: string;
     company?: string;
     page: number;
+    pageSize: number;
   },
 ) {
   if (role === "CLIENT") {
-    return { page: params.page };
+    return { page: params.page, pageSize: params.pageSize };
   }
 
   return {
@@ -88,11 +101,20 @@ function buildApiQuery(
     deleted: filter === "DELETED" ? "true" : undefined,
     company: params.company,
     page: params.page,
+    pageSize: params.pageSize,
   };
 }
 
 export function IncidentsPageClient({
-  initialSearchParams: { filter, q, status, source, company, page: pageParam },
+  initialSearchParams: {
+    filter,
+    q,
+    status,
+    source,
+    company,
+    page: pageParam,
+    pageSize: pageSizeParam,
+  },
 }: IncidentsPageClientProps) {
   const router = useRouter();
   const session = useAuthSession();
@@ -101,6 +123,7 @@ export function IncidentsPageClient({
 
   const activeFilter = resolveFilter(filter);
   const page = resolvePage(pageParam);
+  const pageSize = resolvePageSize(pageSizeParam);
   const activeRole = session?.user.role ?? "CLIENT";
   const displayName = session?.user.name ?? "Usuário";
   const userInitials = getInitials(displayName);
@@ -122,6 +145,7 @@ export function IncidentsPageClient({
       source,
       company,
       page,
+      pageSize,
     });
 
     void fetchIncidents(apiQuery)
@@ -138,6 +162,7 @@ export function IncidentsPageClient({
     activeRole,
     company,
     page,
+    pageSize,
     q,
     session,
     source,
@@ -154,6 +179,7 @@ export function IncidentsPageClient({
             source,
             company,
             page,
+            pageSize,
           }),
         ),
       );
@@ -238,17 +264,18 @@ export function IncidentsPageClient({
             <div className="flex flex-wrap gap-3">
               {filterOrder.map((item) => {
                 const isActive = item === activeFilter;
-                const params = new URLSearchParams();
-                if (item !== "ALL") params.set("filter", item);
-                if (q) params.set("q", q);
-                if (status) params.set("status", status);
-                if (source) params.set("source", source);
-                if (company) params.set("company", company);
 
                 return (
                   <Link
                     key={item}
-                    href={`/dashboard/incidents?${params.toString()}`}
+                    href={buildIncidentsHref(
+                      {
+                        ...activeParams,
+                        filter: item !== "ALL" ? item : undefined,
+                      },
+                      1,
+                      pageSize,
+                    )}
                     className={`btn btn-sm ${isActive ? "btn-primary" : "btn-ghost"}`}
                   >
                     {incidentFilterLabel[item]}
@@ -269,16 +296,22 @@ export function IncidentsPageClient({
           <div className="alert alert-error text-sm">{loadError}</div>
         ) : null}
 
-        <IncidentList incidents={incidents} onRefresh={refreshList} />
-
-        {listPage ? (
-          <IncidentsPagination
-            page={listPage.page}
-            pageSize={listPage.pageSize}
-            total={listPage.total}
-            params={activeParams}
-          />
-        ) : null}
+        <IncidentList
+          incidents={incidents}
+          total={listPage?.total}
+          scrollKey={buildIncidentsHref(activeParams, page, pageSize)}
+          onRefresh={refreshList}
+          footer={
+            listPage ? (
+              <IncidentsPagination
+                page={page}
+                pageSize={pageSize}
+                total={listPage.total}
+                params={activeParams}
+              />
+            ) : null
+          }
+        />
       </div>
     </div>
   );

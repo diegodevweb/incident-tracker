@@ -1,23 +1,33 @@
 /**
- * Card que abre e fecha pelo cabeçalho; começa fechado. O resumo (ex.: "3
- * mensagens") fica à vista para dizer o que tem dentro. Botões em `action`
- * não abrem nem fecham o card (ver RefreshButton).
+ * Card que abre e fecha pelo cabeçalho; começa fechado, a não ser com
+ * `defaultOpen`. O resumo (ex.: "3 mensagens") fica à vista para dizer o que
+ * tem dentro. Botões em `action` não abrem nem fecham o card (ver
+ * RefreshButton). Com `flush`, o conteúdo vai de borda a borda (ex.: tabela).
  */
 export function CollapsibleCard({
   title,
   description,
   summary,
   action,
+  defaultOpen = false,
+  flush = false,
+  className = "",
   children,
 }: {
   title: string;
-  description: string;
+  description?: string;
   summary?: string;
   action?: React.ReactNode;
+  defaultOpen?: boolean;
+  flush?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <details className="group app-surface card border">
+    <details
+      open={defaultOpen}
+      className={`group app-surface card border ${className}`}
+    >
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 p-6 [&::-webkit-details-marker]:hidden">
         <div className="flex min-w-0 items-start gap-3">
           <svg
@@ -40,13 +50,15 @@ export function CollapsibleCard({
                 <span className="badge badge-ghost badge-sm">{summary}</span>
               ) : null}
             </div>
-            <p className="text-sm text-base-content/60">{description}</p>
+            {description ? (
+              <p className="text-sm text-base-content/60">{description}</p>
+            ) : null}
           </div>
         </div>
         {action}
       </summary>
 
-      <div className="space-y-6 px-6 pb-6">{children}</div>
+      <div className={flush ? "" : "space-y-6 px-6 pb-6"}>{children}</div>
     </details>
   );
 }

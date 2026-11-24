@@ -10,6 +10,7 @@ export default async function IncidentsPage({
     source?: string;
     company?: string;
     page?: string;
+    pageSize?: string;
   }>;
 }) {
   const params = await searchParams;

@@ -1,6 +1,11 @@
 import Link from "next/link";
+import { CollapsibleCard } from "@/components/dashboard/collapsible-card";
 import { RefreshButton } from "@/components/dashboard/refresh-button";
-import { incidentAuthorLabel, incidentSourceLabel } from "@/lib/labels";
+import {
+  countLabel,
+  incidentAuthorLabel,
+  incidentSourceLabel,
+} from "@/lib/labels";
 import type { Incident } from "@/lib/types";
 import { IncidentPriorityBadge } from "./incident-priority-badge";
 import { IncidentSlaSummary } from "./incident-sla";
@@ -13,17 +18,43 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+/**
+ * Tabela de tickets num card que recolhe. A tabela rola por dentro, com o
+ * cabeçalho fixo, e o rodapé (paginação) fica sempre à vista embaixo dela.
+ */
 export function IncidentList({
   incidents,
+  total,
+  scrollKey,
   onRefresh,
+  footer,
 }: {
   incidents: Incident[];
+  /** Total do filtro inteiro; sem ele (carregando ou erro) não há resumo nem aviso de vazio. */
+  total?: number;
+  /** Muda com a página ou o filtro; a tabela é recriada e volta ao topo. */
+  scrollKey: string;
   onRefresh: () => Promise<void>;
+  footer?: React.ReactNode;
 }) {
   return (
-    <div className="app-surface overflow-hidden rounded-3xl border">
-      <div className="overflow-x-auto">
-        <table className="table">
+    <CollapsibleCard
+      title="Tickets"
+      summary={
+        total === undefined
+          ? undefined
+          : countLabel(total, "ticket", "tickets")
+      }
+      action={<RefreshButton label="Atualizar tickets" onRefresh={onRefresh} />}
+      defaultOpen
+      flush
+      className="rounded-3xl"
+    >
+      <div
+        key={scrollKey}
+        className="max-h-[70vh] overflow-auto border-t border-base-content/5"
+      >
+        <table className="table table-pin-rows [&_thead_tr]:bg-(--app-surface)">
           <thead>
             <tr className="text-base-content/60">
               <th>Ticket</th>
@@ -32,15 +63,22 @@ export function IncidentList({
               <th>SLA de resposta</th>
               <th>Origem</th>
               <th>Cliente</th>
-              <th>
-                <div className="flex items-center justify-between gap-2">
-                  Criado em
-                  <RefreshButton label="Atualizar tickets" onRefresh={onRefresh} />
-                </div>
-              </th>
+              <th>Criado em</th>
             </tr>
           </thead>
           <tbody>
+            {total !== undefined && incidents.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="py-10 text-center text-sm text-base-content/60"
+                >
+                  {total === 0
+                    ? "Nenhum ticket encontrado."
+                    : "Nenhum ticket nesta página."}
+                </td>
+              </tr>
+            ) : null}
             {incidents.map((incident) => (
               <tr key={incident.id} className="hover">
                 <td>
@@ -97,6 +135,10 @@ export function IncidentList({
           </tbody>
         </table>
       </div>
-    </div>
+
+      {footer ? (
+        <div className="border-t border-base-content/5 px-6 py-4">{footer}</div>
+      ) : null}
+    </CollapsibleCard>
   );
 }
