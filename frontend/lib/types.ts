@@ -195,8 +195,11 @@ export type CompanyListPage = {
   pageSize: number;
 };
 
-/** Usuário de uma empresa cliente (GET /companies/:id/users). */
-export type CompanyUser = {
+/**
+ * Usuário que o admin gerencia: de uma empresa cliente (GET /companies/:id/users)
+ * ou outro admin (GET /admins).
+ */
+export type ManagedUser = {
   id: number;
   name: string;
   email: string;

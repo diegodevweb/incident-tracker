@@ -1,15 +1,23 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { createCompanyUser } from "@/lib/api";
-import type { CompanyUser } from "@/lib/types";
+import type { ManagedUser } from "@/lib/types";
 
-export function NewCompanyUserForm({
-  companyId,
+export function NewManagedUserForm({
+  title,
+  submitLabel,
+  emailPlaceholder,
+  create,
   onCreated,
 }: {
-  companyId: number;
-  onCreated: (user: CompanyUser, temporaryPassword: string) => void;
+  title: string;
+  submitLabel: string;
+  emailPlaceholder: string;
+  create: (payload: {
+    name: string;
+    email: string;
+  }) => Promise<{ user: ManagedUser; temporaryPassword: string }>;
+  onCreated: (user: ManagedUser, temporaryPassword: string) => void;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -22,10 +30,7 @@ export function NewCompanyUserForm({
 
     startTransition(async () => {
       try {
-        const { user, temporaryPassword } = await createCompanyUser(companyId, {
-          name,
-          email,
-        });
+        const { user, temporaryPassword } = await create({ name, email });
         setName("");
         setEmail("");
         onCreated(user, temporaryPassword);
@@ -45,7 +50,7 @@ export function NewCompanyUserForm({
       onSubmit={handleSubmit}
     >
       <div>
-        <h3 className="font-semibold">Novo usuário</h3>
+        <h3 className="font-semibold">{title}</h3>
         <p className="mt-1 text-sm text-base-content/60">
           O sistema gera uma senha temporária para você repassar; a pessoa
           define a senha dela no primeiro acesso.
@@ -74,11 +79,11 @@ export function NewCompanyUserForm({
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="input input-bordered w-full"
-            placeholder="pessoa@empresa.com"
+            placeholder={emailPlaceholder}
           />
         </label>
         <button type="submit" className="btn btn-primary" disabled={isPending}>
-          {isPending ? "Cadastrando..." : "Cadastrar usuário"}
+          {isPending ? "Cadastrando..." : submitLabel}
         </button>
       </div>
 

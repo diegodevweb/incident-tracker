@@ -6,23 +6,34 @@ import { useRouter } from "next/navigation";
 import { useAuthSession } from "@/components/dashboard/auth-session-provider";
 import { RefreshButton } from "@/components/dashboard/refresh-button";
 import { Topbar } from "@/components/dashboard/topbar";
-import { ApiError, fetchCompany, fetchCompanyUsers } from "@/lib/api";
+import {
+  ManagedUserList,
+  type ManagedUserActions,
+} from "@/components/users/managed-user-list";
+import { NewManagedUserForm } from "@/components/users/new-managed-user-form";
+import {
+  ApiError,
+  createCompanyUser,
+  fetchCompany,
+  fetchCompanyUsers,
+  resetCompanyUserPassword,
+  setCompanyUserDisabled,
+  updateCompanyUser,
+} from "@/lib/api";
 import { getInitials } from "@/lib/session";
-import type { Company, CompanyUser } from "@/lib/types";
+import type { Company, ManagedUser } from "@/lib/types";
 import { CompanyDetailsForm } from "./company-details-form";
-import { CompanyUserList } from "./company-user-list";
-import { NewCompanyUserForm } from "./new-company-user-form";
 import { OneTimeSecretNotice } from "./one-time-secret-notice";
 import { WebhookKeysPanel } from "./webhook-keys-panel";
 
-type IssuedPassword = { user: CompanyUser; password: string };
+type IssuedPassword = { user: ManagedUser; password: string };
 
 export function CompanyPageClient({ id }: { id: number }) {
   const router = useRouter();
   const session = useAuthSession();
   const isAdmin = session?.user.role === "ADMIN";
   const [company, setCompany] = useState<Company | null>(null);
-  const [users, setUsers] = useState<CompanyUser[] | null>(null);
+  const [users, setUsers] = useState<ManagedUser[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [issuedPassword, setIssuedPassword] = useState<IssuedPassword | null>(
@@ -69,11 +80,18 @@ export function CompanyPageClient({ id }: { id: number }) {
     }
   }
 
-  function replaceUser(updated: CompanyUser) {
+  function replaceUser(updated: ManagedUser) {
     setUsers((current) =>
       (current ?? []).map((user) => (user.id === updated.id ? updated : user)),
     );
   }
+
+  const userActions: ManagedUserActions = {
+    update: (userId, payload) => updateCompanyUser(id, userId, payload),
+    resetPassword: (userId) => resetCompanyUserPassword(id, userId),
+    setDisabled: (userId, disabled) =>
+      setCompanyUserDisabled(id, userId, disabled),
+  };
 
   return (
     <div>
@@ -131,8 +149,11 @@ export function CompanyPageClient({ id }: { id: number }) {
                   />
                 ) : null}
 
-                <NewCompanyUserForm
-                  companyId={company.id}
+                <NewManagedUserForm
+                  title="Novo usuário"
+                  submitLabel="Cadastrar usuário"
+                  emailPlaceholder="pessoa@empresa.com"
+                  create={(payload) => createCompanyUser(id, payload)}
                   onCreated={(user, password) => {
                     setUsers((current) =>
                       [...(current ?? []), user].sort((a, b) =>
@@ -143,9 +164,11 @@ export function CompanyPageClient({ id }: { id: number }) {
                   }}
                 />
 
-                <CompanyUserList
-                  companyId={company.id}
+                <ManagedUserList
                   users={users}
+                  actions={userActions}
+                  disableNote="Os chamados dela continuam com a empresa."
+                  emptyMessage="Nenhum usuário cadastrado nesta empresa ainda."
                   onUserChanged={replaceUser}
                   onTemporaryPassword={(user, password) =>
                     setIssuedPassword({ user, password })

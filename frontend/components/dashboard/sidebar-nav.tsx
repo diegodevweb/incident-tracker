@@ -42,6 +42,12 @@ const navItems: {
     tag: "Admin",
     roles: ["ADMIN"],
   },
+  {
+    href: "/dashboard/admins",
+    label: "Admins",
+    tag: "Equipe",
+    roles: ["ADMIN"],
+  },
 ];
 
 export function SidebarNav() {
