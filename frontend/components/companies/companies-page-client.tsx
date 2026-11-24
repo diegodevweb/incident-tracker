@@ -129,6 +129,9 @@ export function CompaniesPageClient() {
                         />
                       </div>
                     </th>
+                    <th>
+                      <span className="sr-only">Ações</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -157,6 +160,14 @@ export function CompaniesPageClient() {
                             Ativa
                           </span>
                         )}
+                      </td>
+                      <td className="text-right">
+                        <Link
+                          href={`/dashboard/clients/${company.id}#usuarios`}
+                          className="btn btn-outline btn-sm whitespace-nowrap"
+                        >
+                          Gerenciar usuários
+                        </Link>
                       </td>
                     </tr>
                   ))}
