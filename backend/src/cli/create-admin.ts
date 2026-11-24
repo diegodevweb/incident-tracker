@@ -41,8 +41,8 @@ export type CreateAdminInput = {
 
 /**
  * Cria um usuário ADMIN com a senha escolhida (sem troca obrigatória). É o único
- * caminho para o primeiro admin: o seed nunca roda em produção e o painel só
- * cadastra clientes. Nunca altera um usuário que já existe.
+ * caminho para o primeiro admin: o seed nunca roda em produção e a tela de
+ * admins do painel exige um admin logado. Nunca altera um usuário que já existe.
  */
 export async function createAdmin(
   prisma: Pick<PrismaClient, 'user'>,

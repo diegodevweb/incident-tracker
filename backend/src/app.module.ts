@@ -5,6 +5,7 @@ import { IncidentsModule } from './incidents/incidents.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { AccountModule } from './account/account.module';
+import { AdminsModule } from './admins/admins.module';
 import { CompaniesModule } from './companies/companies.module';
 import { HealthModule } from './health/health.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -21,6 +22,7 @@ import { WebhookKeysModule } from './webhook-keys/webhook-keys.module';
     IncidentsModule,
     WebhookKeysModule,
     AccountModule,
+    AdminsModule,
     CompaniesModule,
     HealthModule,
     NotificationsModule,

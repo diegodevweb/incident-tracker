@@ -8,7 +8,7 @@ import {
 import { NormalizeEmail, Trim } from '../../common/trim';
 import { MAX_VARCHAR_LENGTH } from '../../incidents/limits';
 
-export class UpdateCompanyUserDto {
+export class UpdateManagedUserDto {
   @IsOptional()
   @Trim()
   @IsString()

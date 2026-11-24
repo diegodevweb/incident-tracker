@@ -128,7 +128,7 @@ Keys of a disabled company stop working until the company is enabled again.
 
 ### Client companies and accounts
 
-A client is a company with any number of users. Every user of a company sees all of its incidents (opened by any of them or by the webhook), and each incident shows who opened it. Admins manage companies and their users on the **Clientes** page (or the API below). There is no self sign-up, and admins are not created through the panel (see [Creating admins](#creating-admins)).
+A client is a company with any number of users. Every user of a company sees all of its incidents (opened by any of them or by the webhook), and each incident shows who opened it. Admins manage companies and their users on the **Clientes** page (or the API below). There is no self sign-up. Admins themselves are managed on the **Admins** page (see [Admin accounts](#admin-accounts)).
 
 * **POST** `/companies` with `{ "name", "cnpj"? }`: creates a company. The CNPJ is optional, unique, accepted with or without punctuation and validated by its check digits, numeric or alphanumeric
 * **GET** `/companies?page=&pageSize=&q=&status=active|disabled`: lists companies (search by name or CNPJ) with their user count and open incidents
@@ -142,6 +142,17 @@ A client is a company with any number of users. Every user of a company sees all
 An admin opening an incident must send `companyId`; a client user always opens it in their own company.
 
 With a temporary password, the only things a user can do are read `GET /account`, change the password at `POST /account/password` (current and new password; the new one follows `src/auth/password-policy.ts`) and log out. Changing the password ends the user's other sessions. `PATCH /account` changes the user's own name.
+
+### Admin accounts
+
+Any admin manages the other admins on the **Admins** page, with the same rules as client users: the panel issues a temporary password, shown once, that must be changed at the first login, and admins are disabled, never deleted. Nobody changes their own account here; that is done on **Meu perfil**. Since the one acting is an active admin who cannot disable themselves, the panel always keeps an active admin; only two admins disabling each other at the same moment could lock everyone out, and the command below creates a new admin in that case. The first admin of a new database still comes from the command in [Creating admins](#creating-admins).
+
+* **GET** `/admins` and **POST** `/admins` with `{ "name", "email" }`: lists admins, or creates one with a random temporary password returned once in `temporaryPassword`
+* **PATCH** `/admins/:userId`: changes name or e-mail
+* **POST** `/admins/:userId/password-reset`: issues a new temporary password and ends the admin's sessions
+* **POST** `/admins/:userId/disable` and `/enable`: a disabled admin cannot log in and loses its sessions
+
+Any of these on the admin's own id answers `403`, and a client user's id answers `404`.
 
 ### Working on an incident
 
@@ -158,7 +169,7 @@ Every status change and attachment goes to the timeline with who did it. Message
 
 ### Creating admins
 
-The panel only creates client users, and the development seed never runs with `NODE_ENV=production`, so a new production database has no users at all. Admins, the first one included, are created with a command that talks straight to the database (`DATABASE_URL` is required) and runs from the built code:
+The development seed never runs with `NODE_ENV=production`, so a new production database has no users at all, and the **Admins** page needs an admin to sign in first. The first admin is created with a command that talks straight to the database (`DATABASE_URL` is required) and runs from the built code. After that, admins are usually added on the **Admins** page, but the command keeps working:
 
 ```bash
 node dist/cli/run-create-admin --name "Your Name" --email you@company.com

@@ -1,23 +1,10 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { Prisma, UserRole } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { generateTemporaryPassword, hashPassword } from '../auth/passwords';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateCompanyUserDto } from './dto/create-company-user.dto';
-import { UpdateCompanyUserDto } from './dto/update-company-user.dto';
-
-// O que o admin vê de um usuário. Senha e versão de token nunca saem.
-const COMPANY_USER_SELECT = {
-  id: true,
-  name: true,
-  email: true,
-  createdAt: true,
-  disabledAt: true,
-  mustChangePassword: true,
-} satisfies Prisma.UserSelect;
+import { CreateManagedUserDto } from '../users/dto/create-managed-user.dto';
+import { UpdateManagedUserDto } from '../users/dto/update-managed-user.dto';
+import { MANAGED_USER_SELECT, withUniqueEmail } from '../users/managed-users';
 
 /**
  * Usuários de uma empresa cliente, geridos pelo admin. Só mexe em usuários
@@ -33,17 +20,17 @@ export class CompanyUsersService {
 
     return this.prisma.user.findMany({
       where: { companyId, role: UserRole.CLIENT },
-      select: COMPANY_USER_SELECT,
+      select: MANAGED_USER_SELECT,
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
   }
 
   /** Cria o usuário com uma senha temporária, devolvida só nesta resposta. */
-  async create(companyId: number, data: CreateCompanyUserDto) {
+  async create(companyId: number, data: CreateManagedUserDto) {
     await this.assertCompany(companyId);
 
     const temporaryPassword = generateTemporaryPassword(data.email);
-    const user = await this.withUniqueEmail(async () =>
+    const user = await withUniqueEmail(async () =>
       this.prisma.user.create({
         data: {
           name: data.name,
@@ -53,21 +40,21 @@ export class CompanyUsersService {
           companyId,
           mustChangePassword: true,
         },
-        select: COMPANY_USER_SELECT,
+        select: MANAGED_USER_SELECT,
       }),
     );
 
     return { user, temporaryPassword };
   }
 
-  async update(companyId: number, userId: number, data: UpdateCompanyUserDto) {
+  async update(companyId: number, userId: number, data: UpdateManagedUserDto) {
     await this.findUser(companyId, userId);
 
-    return this.withUniqueEmail(() =>
+    return withUniqueEmail(() =>
       this.prisma.user.update({
         where: { id: userId },
         data: { name: data.name, email: data.email },
-        select: COMPANY_USER_SELECT,
+        select: MANAGED_USER_SELECT,
       }),
     );
   }
@@ -99,14 +86,14 @@ export class CompanyUsersService {
     if (user.disabledAt) {
       return this.prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: COMPANY_USER_SELECT,
+        select: MANAGED_USER_SELECT,
       });
     }
 
     return this.prisma.user.update({
       where: { id: userId },
       data: { disabledAt: new Date(), tokenVersion: { increment: 1 } },
-      select: COMPANY_USER_SELECT,
+      select: MANAGED_USER_SELECT,
     });
   }
 
@@ -116,7 +103,7 @@ export class CompanyUsersService {
     return this.prisma.user.update({
       where: { id: userId },
       data: { disabledAt: null },
-      select: COMPANY_USER_SELECT,
+      select: MANAGED_USER_SELECT,
     });
   }
 
@@ -152,20 +139,5 @@ export class CompanyUsersService {
     }
 
     return user;
-  }
-
-  private async withUniqueEmail<T>(write: () => Promise<T>) {
-    try {
-      return await write();
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException('Já existe um usuário com este e-mail');
-      }
-
-      throw error;
-    }
   }
 }

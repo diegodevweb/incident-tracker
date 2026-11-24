@@ -3,7 +3,7 @@ import { NormalizeEmail, Trim } from '../../common/trim';
 import { MAX_VARCHAR_LENGTH } from '../../incidents/limits';
 
 // Sem senha: o servidor gera uma temporária e o usuário troca no 1º acesso.
-export class CreateCompanyUserDto {
+export class CreateManagedUserDto {
   @Trim()
   @IsString()
   @IsNotEmpty()

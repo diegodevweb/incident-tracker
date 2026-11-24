@@ -3,7 +3,6 @@ import type {
   AuthSession,
   Company,
   CompanyListPage,
-  CompanyUser,
   Incident,
   IncidentComment,
   IncidentEnvironment,
@@ -13,6 +12,7 @@ import type {
   IncidentListSummary,
   IncidentSource,
   IncidentStatus,
+  ManagedUser,
   MonthlyReport,
   NotificationList,
   ResponseSla,
@@ -453,7 +453,7 @@ export async function setCompanyDisabled(id: number, disabled: boolean) {
 }
 
 export async function fetchCompanyUsers(companyId: number) {
-  return apiFetch<CompanyUser[]>(`/companies/${companyId}/users`);
+  return apiFetch<ManagedUser[]>(`/companies/${companyId}/users`);
 }
 
 /** A senha temporária só vem nesta resposta. */
@@ -461,7 +461,7 @@ export async function createCompanyUser(
   companyId: number,
   payload: { name: string; email: string },
 ) {
-  return apiFetch<{ user: CompanyUser; temporaryPassword: string }>(
+  return apiFetch<{ user: ManagedUser; temporaryPassword: string }>(
     `/companies/${companyId}/users`,
     { method: "POST", body: JSON.stringify(payload) },
   );
@@ -472,7 +472,7 @@ export async function updateCompanyUser(
   userId: number,
   payload: { name?: string; email?: string },
 ) {
-  return apiFetch<CompanyUser>(`/companies/${companyId}/users/${userId}`, {
+  return apiFetch<ManagedUser>(`/companies/${companyId}/users/${userId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -494,8 +494,45 @@ export async function setCompanyUserDisabled(
   userId: number,
   disabled: boolean,
 ) {
-  return apiFetch<CompanyUser>(
+  return apiFetch<ManagedUser>(
     `/companies/${companyId}/users/${userId}/${disabled ? "disable" : "enable"}`,
+    { method: "POST" },
+  );
+}
+
+export async function fetchAdmins() {
+  return apiFetch<ManagedUser[]>("/admins");
+}
+
+/** A senha temporária só vem nesta resposta. */
+export async function createAdmin(payload: { name: string; email: string }) {
+  return apiFetch<{ user: ManagedUser; temporaryPassword: string }>("/admins", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdmin(
+  userId: number,
+  payload: { name?: string; email?: string },
+) {
+  return apiFetch<ManagedUser>(`/admins/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** A senha temporária só vem nesta resposta. */
+export async function resetAdminPassword(userId: number) {
+  return apiFetch<{ temporaryPassword: string }>(
+    `/admins/${userId}/password-reset`,
+    { method: "POST" },
+  );
+}
+
+export async function setAdminDisabled(userId: number, disabled: boolean) {
+  return apiFetch<ManagedUser>(
+    `/admins/${userId}/${disabled ? "disable" : "enable"}`,
     { method: "POST" },
   );
 }

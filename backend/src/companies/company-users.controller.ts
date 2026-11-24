@@ -14,9 +14,9 @@ import { UserRole } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { CreateManagedUserDto } from '../users/dto/create-managed-user.dto';
+import { UpdateManagedUserDto } from '../users/dto/update-managed-user.dto';
 import { CompanyUsersService } from './company-users.service';
-import { CreateCompanyUserDto } from './dto/create-company-user.dto';
-import { UpdateCompanyUserDto } from './dto/update-company-user.dto';
 
 @Controller('companies/:companyId/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -32,7 +32,7 @@ export class CompanyUsersController {
   @Post()
   create(
     @Param('companyId', ParseIntPipe) companyId: number,
-    @Body() body: CreateCompanyUserDto,
+    @Body() body: CreateManagedUserDto,
   ) {
     return this.companyUsers.create(companyId, body);
   }
@@ -41,7 +41,7 @@ export class CompanyUsersController {
   update(
     @Param('companyId', ParseIntPipe) companyId: number,
     @Param('userId', ParseIntPipe) userId: number,
-    @Body() body: UpdateCompanyUserDto,
+    @Body() body: UpdateManagedUserDto,
   ) {
     return this.companyUsers.update(companyId, userId, body);
   }
