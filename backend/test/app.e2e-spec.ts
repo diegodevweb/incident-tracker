@@ -851,6 +851,85 @@ describe('API (e2e)', () => {
       .expect(200);
   });
 
+  it('lets an admin manage other admins, but never their own account', async () => {
+    const bia = account('Bia e2e', 'bia');
+    const created = bodyOf<{
+      user: { id: number; mustChangePassword: boolean };
+      temporaryPassword: string;
+    }>(
+      await http()
+        .post('/admins')
+        .set(bearer(admin.token))
+        .send({ name: bia.name, email: bia.email })
+        .expect(201),
+    );
+    const biaId = created.user.id;
+    bia.password = created.temporaryPassword;
+    expect(created.user.mustChangePassword).toBe(true);
+
+    // Cliente não vê os admins, e um e-mail de cliente não vira admin.
+    await http().get('/admins').set(bearer(ana.token)).expect(403);
+    await http()
+      .post('/admins')
+      .set(bearer(admin.token))
+      .send({ name: 'Cópia', email: ana.email })
+      .expect(409);
+
+    // O admin novo troca a senha temporária antes de usar as rotas de admin.
+    const pending = await login(bia.email, bia.password);
+    await http().get('/admins').set(bearer(pending.accessToken)).expect(403);
+    await activate(bia);
+
+    const admins = bodyOf<{ id: number; email: string }[]>(
+      await http().get('/admins').set(bearer(bia.token)).expect(200),
+    );
+    const emails = admins.map(({ email }) => email);
+    expect(emails).toEqual(expect.arrayContaining([admin.email, bia.email]));
+    expect(emails).not.toContain(ana.email);
+
+    // A própria conta só muda em "Meu perfil".
+    await http()
+      .post(`/admins/${biaId}/disable`)
+      .set(bearer(bia.token))
+      .expect(403);
+    await http()
+      .patch(`/admins/${biaId}`)
+      .set(bearer(bia.token))
+      .send({ email: `outro-${bia.email}` })
+      .expect(403);
+
+    // Senha nova: a antiga e as sessões caem, e a troca volta a ser exigida.
+    const reset = bodyOf<{ temporaryPassword: string }>(
+      await http()
+        .post(`/admins/${biaId}/password-reset`)
+        .set(bearer(admin.token))
+        .expect(200),
+    );
+    await http().get('/admins').set(bearer(bia.token)).expect(401);
+    await http()
+      .post('/auth/login')
+      .send({ email: bia.email, password: bia.password })
+      .expect(401);
+    bia.password = reset.temporaryPassword;
+    await activate(bia);
+
+    await http()
+      .post(`/admins/${biaId}/disable`)
+      .set(bearer(admin.token))
+      .expect(200);
+    await http().get('/admins').set(bearer(bia.token)).expect(401);
+    await http()
+      .post('/auth/login')
+      .send({ email: bia.email, password: bia.password })
+      .expect(403);
+
+    await http()
+      .post(`/admins/${biaId}/enable`)
+      .set(bearer(admin.token))
+      .expect(200);
+    await login(bia.email, bia.password);
+  });
+
   it('revokes the token on logout', async () => {
     await http().post('/auth/logout').set(bearer(carla.token)).expect(204);
     await http().get('/incidents').set(bearer(carla.token)).expect(401);
