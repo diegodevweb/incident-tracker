@@ -71,6 +71,17 @@ export function CompanyPageClient({ id }: { id: number }) {
       });
   }, [id, isAdmin]);
 
+  const isLoaded = company !== null && users !== null;
+
+  // O botão "Gerenciar usuários" da lista de clientes abre a página em
+  // #usuarios, mas a seção só existe depois do carregamento: o navegador não
+  // acha a âncora sozinho.
+  useEffect(() => {
+    if (isLoaded && window.location.hash === "#usuarios") {
+      document.getElementById("usuarios")?.scrollIntoView();
+    }
+  }, [isLoaded]);
+
   async function refreshUsers() {
     try {
       setUsers(await fetchCompanyUsers(id));
@@ -118,7 +129,10 @@ export function CompanyPageClient({ id }: { id: number }) {
               onChanged={setCompany}
             />
 
-            <section className="app-surface card border">
+            <section
+              id="usuarios"
+              className="app-surface card scroll-mt-6 border"
+            >
               <div className="card-body gap-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
